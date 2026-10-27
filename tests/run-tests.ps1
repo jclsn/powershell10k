@@ -176,6 +176,32 @@ Test-Case 'syntax highlighting detects unknown commands' {
     Assert-True (_ps10k_hl_line_valid '')
 }
 
+Test-Case 'vi-mode switches PSReadLine and redraws the prompt char' {
+    if (-not (Get-Module PSReadLine)) { throw 'PSReadLine missing' }
+    $plugins = $global:PS10K_PLUGINS
+    try {
+        $global:PS10K_PLUGINS = @('syntax-highlighting', 'vi-mode')
+        $warnings = . (Join-Path $root 'powershell10k.ps1') 3>&1 | Where-Object { $_ -is [System.Management.Automation.WarningRecord] }
+        if ($warnings) { throw "warnings: $($warnings -join '; ')" }
+        Assert-Equal 'Vi' (Get-PSReadLineOption).EditMode
+        $commandKeys = @(Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -eq '<k>' })
+        Assert-Equal 'HistorySearchBackward' $commandKeys[0].Function
+        $P10K.MultiLine = $true
+        [void](prompt)
+        $global:_ps10k_state.ViMode = 'Command'
+        $global:_ps10k_state.ViRedraw = $true
+        $redrawn = prompt
+        Assert-True $redrawn.StartsWith($global:_ps10k_state.LastPrompt.Head) 'redraw changed the prompt body'
+        Assert-True $redrawn.Contains((_ps10k_icon 'prompt_vicmd')) 'command mode prompt char missing'
+        Assert-True (-not (prompt).Contains((_ps10k_icon 'prompt_vicmd'))) 'a new prompt starts in insert mode'
+    }
+    finally {
+        $global:PS10K_PLUGINS = $plugins
+        . (Join-Path $root 'powershell10k.ps1') 3>$null
+    }
+    Assert-Equal 'Windows' (Get-PSReadLineOption).EditMode 'reload without vi-mode'
+}
+
 Test-Case 'configure writes a config that loads back' {
     $answers = [ordered]@{ Mode = 'unicode'; Style = 'lean'; MultiLine = $false; RightSegments = @('status', 'time'); TransientPrompt = $true }
     Set-Content -LiteralPath $env:PS10K_CONFIG -Value (_ps10k_wizard_config_text $answers) -Encoding UTF8
