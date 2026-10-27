@@ -169,6 +169,21 @@ Test-Case 'z ranks visited directories' {
     Assert-Equal 1 @(_ps10k_z_matches -Terms @('beta')).Count
 }
 
+Test-Case 'cd without arguments goes home' {
+    Push-Location
+    try {
+        Set-Location -LiteralPath $env:SystemRoot
+        cd
+        Assert-Equal $HOME (Get-Location).Path
+        cd -Path $env:SystemRoot
+        Assert-Equal $env:SystemRoot (Get-Location).Path
+        Set-Location HKCU:\Software
+        cd
+        Assert-Equal $HOME (Get-Location).Path 'from another provider'
+    }
+    finally { Pop-Location }
+}
+
 Test-Case 'syntax highlighting detects unknown commands' {
     if (-not (Get-Command _ps10k_hl_line_valid -ErrorAction SilentlyContinue)) { throw 'plugin not loaded (PSReadLine missing?)' }
     Assert-True (_ps10k_hl_line_valid 'Get-ChildItem | Select-Object -First 1')
