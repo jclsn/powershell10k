@@ -254,12 +254,19 @@ Test-Case 'profile block install is idempotent and removable' {
     Assert-Equal 'Set-Alias foo bar' (Remove-ProfileBlock $text)
 }
 
+Test-Case 'installer splits a comma separated plugin list' {
+    . (Join-Path $root 'install.ps1')
+    Assert-Equal 'git|z|vi-mode' ((Split-PluginList @('git,z, vi-mode')) -join '|')
+    Assert-Equal 'git|z' ((Split-PluginList @('git', 'z')) -join '|')
+}
+
 Test-Case 'end-to-end install and uninstall into a temp folder' {
     $target = Join-Path $work 'install'
     $profileFile = Join-Path $work 'e2e-profile.ps1'
     $out = & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $root 'install.ps1') `
-        -InstallDir $target -ProfilePath $profileFile -SkipFont -SkipTerminal -SkipExecutionPolicy -NoPSReadLineUpgrade 2>&1
+        -InstallDir $target -ProfilePath $profileFile -Plugins git,z,vi-mode -SkipFont -SkipTerminal -SkipExecutionPolicy -NoPSReadLineUpgrade 2>&1
     if ($LASTEXITCODE -ne 0) { throw "install failed: $out" }
+    Assert-True ([IO.File]::ReadAllText($profileFile).Contains("@('git', 'z', 'vi-mode')")) 'plugin list was not split'
     Assert-True (Test-Path (Join-Path $target 'powershell10k.ps1'))
     $check = & powershell -NoProfile -NonInteractive -Command ". '$profileFile'; (Get-Command prompt).Source; if (Get-Command gst -ErrorAction SilentlyContinue) { 'gst-ok' }" 2>&1
     Assert-True ("$check" -match 'gst-ok') "profile did not load: $check"

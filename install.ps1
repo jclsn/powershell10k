@@ -270,7 +270,13 @@ function Test-Interactive {
     @([Environment]::GetCommandLineArgs() | Where-Object { $_ -match '^-noni' }).Count -eq 0
 }
 
+# `powershell -File install.ps1 -Plugins a,b` passes the list as one string.
+function Split-PluginList([string[]]$Names) {
+    @($Names | ForEach-Object { $_ -split '[,\s]+' } | Where-Object { $_ })
+}
+
 function Invoke-Install {
+    $script:Plugins = Split-PluginList $Plugins
     Write-Host ''
     Write-Host 'powershell10k installer (no administrator rights required)' -ForegroundColor Green
     Write-Host ''
