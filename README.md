@@ -139,8 +139,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-tests.ps1
 Inspired by [oh-my-zsh](https://github.com/ohmyzsh/ohmyzsh) and
 [powerlevel10k](https://github.com/romkatv/powerlevel10k). The bundled font is
 [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) patched by
-[Nerd Fonts](https://www.nerdfonts.com), under the SIL Open Font License 1.1
-([fonts/OFL.txt](fonts/OFL.txt)).
+[Nerd Fonts](https://www.nerdfonts.com), under the SIL Open Font License 1.1;
+see [fonts/README.md](fonts/README.md) for the license files and glyph sources.
 This project is an independent PowerShell implementation.
 
 ## License
