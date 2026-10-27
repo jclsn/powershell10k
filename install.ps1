@@ -40,6 +40,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+# Remembered so a re-install only overrides what was passed explicitly.
+$script:ExplicitParameters = @($PSBoundParameters.Keys)
 
 $script:BeginMarker = '# >>> powershell10k >>>'
 $script:EndMarker = '# <<< powershell10k <<<'
@@ -87,6 +89,27 @@ function Get-ProfileBlock([string]$Home10k, [string]$ThemeName, [string[]]$Plugi
         '. (Join-Path $env:PS10K_HOME ''powershell10k.ps1'')'
         $script:EndMarker
     ) -join "`r`n"
+}
+
+# Reads the theme and plugin list from an existing powershell10k block, so a
+# re-install without -Theme/-Plugins keeps what the user set up.
+function Get-ProfileSettings([string[]]$Paths) {
+    foreach ($path in $Paths) {
+        if (-not (Test-Path -LiteralPath $path)) { continue }
+        $text = [IO.File]::ReadAllText($path)
+        $pattern = '(?s)' + [regex]::Escape($script:BeginMarker) + '(.*?)' + [regex]::Escape($script:EndMarker)
+        $block = [regex]::Match($text, $pattern)
+        if (-not $block.Success) { continue }
+        $settings = @{}
+        $theme = [regex]::Match($block.Groups[1].Value, "PS10K_THEME\s*=\s*'([^']*)'")
+        if ($theme.Success) { $settings.Theme = $theme.Groups[1].Value }
+        $plugins = [regex]::Match($block.Groups[1].Value, 'PS10K_PLUGINS\s*=\s*@\(([^)]*)\)')
+        if ($plugins.Success) {
+            $settings.Plugins = @([regex]::Matches($plugins.Groups[1].Value, "'([^']+)'") | ForEach-Object { $_.Groups[1].Value })
+        }
+        return $settings
+    }
+    @{}
 }
 
 # Removes any existing powershell10k block from profile text.
@@ -347,8 +370,14 @@ function Invoke-Install {
 
     if (-not $SkipProfile) {
         Write-Step 'Updating PowerShell profiles'
-        $block = Get-ProfileBlock -Home10k $InstallDir -ThemeName $Theme -PluginNames $Plugins
         $paths = if ($ProfilePath) { $ProfilePath } else { Get-DefaultProfilePaths }
+        $previous = Get-ProfileSettings $paths
+        if ($previous.Plugins -and $script:ExplicitParameters -notcontains 'Plugins') {
+            $Plugins = $previous.Plugins
+            Write-Info "keeping your plugins: $($Plugins -join ', ') (pass -Plugins to change them)"
+        }
+        if ($previous.Theme -and $script:ExplicitParameters -notcontains 'Theme') { $Theme = $previous.Theme }
+        $block = Get-ProfileBlock -Home10k $InstallDir -ThemeName $Theme -PluginNames $Plugins
         foreach ($path in $paths) { Install-ProfileBlock -Path $path -Block $block; Write-Info $path }
     }
 
