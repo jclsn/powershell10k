@@ -30,6 +30,8 @@ PowerShell 7, and **installs without administrator rights**.
 - **oh-my-zsh plugins**: `git` (about 80 aliases plus tab completion), `z`,
   `aliases`, `autosuggestions`, `syntax-highlighting`, `vi-mode`, `extract`,
   `web-search`, `copypath`.
+- **Unix-style `cd`**: `cd` without arguments takes you home, from any folder or
+  drive.
 - `custom/` folder for your own plugins, themes and segments, like `$ZSH_CUSTOM`.
 
 ## Install
