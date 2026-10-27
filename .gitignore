@@ -1,0 +1,10 @@
+# User customizations live in custom/ and are never committed upstream.
+custom/*
+!custom/README.md
+!custom/plugins/
+custom/plugins/*
+!custom/plugins/example/
+!custom/themes/
+custom/themes/*
+!custom/themes/.gitkeep
+*.bak
