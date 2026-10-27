@@ -4,10 +4,7 @@ An oh-my-zsh style framework with a powerlevel10k style prompt for PowerShell
 and Windows Terminal. Pure PowerShell, works on Windows PowerShell 5.1 and
 PowerShell 7, and **installs without administrator rights**.
 
-```
- ~\src\powershell10k   main ⇡2 !1 ?3                          4s  18:42:07 
-❯ git status
-```
+<img width="877" height="262" alt="image" src="https://github.com/user-attachments/assets/a13263e4-74ff-4780-90a6-59d9304573b4" />
 
 ## Features
 
