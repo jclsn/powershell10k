@@ -260,7 +260,9 @@ Test-Case 'PowerShell profiles in Windows Terminal get -NoLogo' {
 
 Test-Case 'bundled fonts match the installer list' {
     foreach ($file in $script:FontFiles.Keys) { Assert-True (Test-Path (Join-Path $root "fonts\$file")) "missing fonts\$file" }
-    Assert-True (Test-Path (Join-Path $root 'fonts\OFL.txt')) 'font license missing'
+    foreach ($file in 'OFL.txt', 'NERD-FONTS-LICENSE.md', 'NERD-FONTS-LICENSE-AUDIT.md') {
+        Assert-True (Test-Path (Join-Path $root "fonts\$file")) "font license fonts\$file missing"
+    }
     Assert-True ((Get-Content (Join-Path $root 'install.ps1') -Raw) -notmatch 'Invoke-WebRequest[^\r\n]*\.ttf') 'fonts must not be downloaded'
 }
 
