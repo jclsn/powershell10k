@@ -35,7 +35,7 @@ function Assert-True($Value, [string]$Message = 'expected true') {
 Write-Host 'static checks'
 
 Test-Case 'all scripts parse and are ASCII-only' {
-    foreach ($file in Get-ChildItem -LiteralPath $root -Recurse -Filter '*.ps1' | Where-Object { $_.FullName -notmatch '\\\.git\\' }) {
+    foreach ($file in Get-ChildItem -LiteralPath $root -Recurse -Filter '*.ps1' | Where-Object { $_.FullName -notmatch '\\(\.git|modules)\\' -and $_.Extension -eq '.ps1' }) {
         $tokens = $null; $errors = $null
         [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors)
         if ($errors.Count -gt 0) { throw "$($file.Name): $($errors[0].Message)" }
@@ -297,6 +297,23 @@ Test-Case 'installer splits a comma separated plugin list' {
     . (Join-Path $root 'install.ps1')
     Assert-Equal 'git|z|vi-mode' ((Split-PluginList @('git,z, vi-mode')) -join '|')
     Assert-Equal 'git|z' ((Split-PluginList @('git', 'z')) -join '|')
+}
+
+Test-Case 'bundled PSReadLine is complete and installs to the user module folder' {
+    $bundled = Get-ChildItem -LiteralPath (Join-Path $root 'modules\PSReadLine') -Directory | Select-Object -First 1
+    $info = Test-ModuleManifest -Path (Join-Path $bundled.FullName 'PSReadLine.psd1') -ErrorAction Stop
+    Assert-Equal $bundled.Name $info.Version 'folder name and manifest version'
+    Assert-True (Test-Path (Join-Path $bundled.FullName 'License.txt')) 'PSReadLine license missing'
+    $fakeSource = Join-Path $work 'modules-src'
+    New-Item -ItemType Directory -Path (Join-Path $fakeSource 'PSReadLine\99.0.0\netstd') -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $fakeSource 'PSReadLine\99.0.0\netstd\x.dll') -Value 'x'
+    $fakeModules = Join-Path $work 'user-modules'
+    function Get-UserModulePath { $fakeModules }
+    Install-UserPSReadLine -Source $fakeSource | Out-Null
+    Assert-True (Test-Path (Join-Path $fakeModules 'PSReadLine\99.0.0\netstd\x.dll')) 'newer bundled version was not copied'
+    Remove-Item -LiteralPath $fakeModules -Recurse -Force
+    Install-UserPSReadLine -Source (Join-Path $root 'modules') | Out-Null
+    Assert-True (-not (Test-Path $fakeModules)) 'an installed version that is new enough must be kept'
 }
 
 Test-Case 'end-to-end install and uninstall into a temp folder' {
