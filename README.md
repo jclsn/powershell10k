@@ -24,7 +24,7 @@ PowerShell 7, and **installs without administrator rights**.
 - **History substring search**: type `git`, then press <kbd>Up</kbd>/<kbd>Down</kbd>
   to step through every earlier command that starts with `git`.
 - **zsh-autosuggestions**: grey inline suggestions from history with
-  PSReadLine 2.1+ (the installer offers a current-user upgrade).
+  PSReadLine 2.1+ (PSReadLine 2.4.5 is bundled and installed for your user).
 - **vi mode** (`bindkey -v`): opt-in `vi-mode` plugin with a bar/block cursor
   and a prompt char that flips to `❮` in command mode.
 - **oh-my-zsh plugins**: `git` (about 80 aliases plus tab completion), `z`,
@@ -43,7 +43,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 (A downloaded and unzipped copy works the same way.) The installer needs no
-internet access: the font is bundled. Then restart Windows Terminal. The
+internet access: the font and PSReadLine are bundled. Re-running it keeps your
+plugin list and theme unless you pass `-Plugins` or `-Theme`. Then restart Windows Terminal. The
 configuration wizard starts in the first new tab.
 
 ### What the installer touches (everything is per-user)
@@ -55,7 +56,7 @@ configuration wizard starts in the first new tab.
 | Windows Terminal | `profiles.defaults.font.face` and `-NoLogo` on PowerShell profiles (hides the banner and the profile load time) in its `settings.json`, backup saved next to it |
 | Profile | a marked block in `Documents\WindowsPowerShell\` and `Documents\PowerShell\` profiles, backups saved next to them |
 | Execution policy | `RemoteSigned` for `CurrentUser`, only if scripts are blocked |
-| PSReadLine | optional upgrade with `Install-Module -Scope CurrentUser` |
+| PSReadLine 2.4.5 (bundled in `modules\`) | `Documents\WindowsPowerShell\Modules`, only if the installed one is older |
 
 Nothing goes to Program Files or HKLM, and nothing asks for elevation.
 
@@ -65,7 +66,7 @@ Nothing goes to Program Files or HKLM, and nothing asks for elevation.
 .\install.ps1 -Plugins git,z,aliases,autosuggestions,syntax-highlighting
 .\install.ps1 -SkipFont -SkipTerminal       # bring your own Nerd Font
 .\install.ps1 -KeepLogo                     # keep the PowerShell startup banner
-.\install.ps1 -UpgradePSReadLine            # upgrade without asking
+.\install.ps1 -NoPSReadLineUpgrade          # keep the PSReadLine you have
 .\install.ps1 -RepoUrl https://github.com/<you>/powershell10k.git   # git install, enables `ps10k update`
 ```
 
