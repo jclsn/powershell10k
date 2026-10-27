@@ -1,0 +1,50 @@
+# aliases plugin: common directory and file helpers.
+
+function global:.. { Set-Location .. }
+function global:... { Set-Location ..\.. }
+function global:.... { Set-Location ..\..\.. }
+function global:..... { Set-Location ..\..\..\.. }
+
+function global:l { Get-ChildItem -Force @args }
+function global:la { Get-ChildItem -Force @args }
+function global:ll { Get-ChildItem @args | Format-Table Mode, LastWriteTime, Length, Name -AutoSize }
+function global:lsd { Get-ChildItem -Directory @args }
+
+# take/mkcd: create a directory and change into it.
+function global:take([Parameter(Mandatory)][string]$Path) {
+    New-Item -ItemType Directory -Path $Path -Force | Out-Null
+    Set-Location -LiteralPath $Path
+}
+Set-Alias -Name mkcd -Value take -Scope Global
+
+function global:touch {
+    foreach ($path in $args) {
+        if (Test-Path -LiteralPath $path) { (Get-Item -LiteralPath $path).LastWriteTime = Get-Date }
+        else { New-Item -ItemType File -Path $path | Out-Null }
+    }
+}
+
+function global:which([Parameter(Mandatory)][string]$Name) {
+    $cmd = Get-Command $Name -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $cmd) { Write-Error "${Name} not found"; return }
+    switch ($cmd.CommandType) {
+        'Application' { $cmd.Source }
+        'Alias' { "$Name -> $($cmd.Definition)" }
+        default { "$($cmd.CommandType) $($cmd.Name)" }
+    }
+}
+
+if (-not (Get-Command grep -CommandType Application -ErrorAction SilentlyContinue)) {
+    function global:grep {
+        param([Parameter(Mandatory, Position = 0)][string]$Pattern, [Parameter(ValueFromRemainingArguments)][string[]]$Path)
+        if ($Path) { Select-String -Pattern $Pattern -Path $Path }
+        else { $input | Select-String -Pattern $Pattern }
+    }
+}
+
+function global:h { Get-History @args }
+function global:hs([string]$Pattern) {
+    $file = (Get-PSReadLineOption -ErrorAction SilentlyContinue).HistorySavePath
+    if ($file -and (Test-Path -LiteralPath $file)) { Select-String -LiteralPath $file -Pattern $Pattern -SimpleMatch | ForEach-Object Line }
+}
+function global:path { $env:PATH -split ';' | Where-Object { $_ } }
