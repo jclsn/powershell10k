@@ -128,6 +128,16 @@ $PS10K_SEGMENTS['hello'] = { param($ctx) @{ IconText = '*'; Text = 'hi'; Fg = 0;
 | `web-search` | `google`, `ddg`, `bing`, `github`, `stackoverflow`, `wiki`, `youtube` |
 | `copypath` | `copypath [path]`, `copyfile <file>` |
 
+## Troubleshooting
+
+`ps10k doctor` checks the common problems. For a full report (versions,
+PSReadLine, key bindings, profile, load errors), run this in the tab where
+something does not work and send `~\ps10k-diagnose.txt` along with your issue:
+
+```powershell
+. $env:PS10K_HOME\tools\diagnose.ps1
+```
+
 ## Credits
 
 Inspired by [oh-my-zsh](https://github.com/ohmyzsh/ohmyzsh) and
