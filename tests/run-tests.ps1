@@ -291,6 +291,10 @@ Test-Case 'end-to-end install and uninstall into a temp folder' {
         -InstallDir $target -ProfilePath $profileFile -Plugins git,z,vi-mode -SkipFont -SkipTerminal -SkipExecutionPolicy -NoPSReadLineUpgrade 2>&1
     if ($LASTEXITCODE -ne 0) { throw "install failed: $out" }
     Assert-True ([IO.File]::ReadAllText($profileFile).Contains("@('git', 'z', 'vi-mode')")) 'plugin list was not split'
+    $out = & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File (Join-Path $root 'install.ps1') `
+        -InstallDir $target -ProfilePath $profileFile -SkipFont -SkipTerminal -SkipExecutionPolicy -NoPSReadLineUpgrade 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "re-install failed: $out" }
+    Assert-True ([IO.File]::ReadAllText($profileFile).Contains("@('git', 'z', 'vi-mode')")) 're-install without -Plugins dropped the plugin list'
     Assert-True (Test-Path (Join-Path $target 'powershell10k.ps1'))
     $check = & powershell -NoProfile -NonInteractive -Command ". '$profileFile'; (Get-Command prompt).Source; if (Get-Command gst -ErrorAction SilentlyContinue) { 'gst-ok' }" 2>&1
     Assert-True ("$check" -match 'gst-ok') "profile did not load: $check"
