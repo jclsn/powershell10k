@@ -1,18 +1,21 @@
-# Hook system, modelled after zsh's precmd and chpwd hooks.
-#   precmd: runs before every prompt is drawn.
-#   chpwd:  runs before the prompt when the current location changed.
-# Hooks receive the prompt context (see themes/powerlevel10k/prompt.ps1).
+# Hook system, modelled after zsh's precmd, preexec and chpwd hooks.
+#   precmd:  runs before every prompt is drawn.
+#   chpwd:   runs before the prompt when the current location changed.
+#   preexec: runs when Enter accepts a complete command line, before it runs.
+#            Needs Enter bound to _ps10k_accept_line (see _ps10k_bind_accept_line).
+# precmd and chpwd hooks receive the prompt context (see themes/powerlevel10k/prompt.ps1).
 
 if (-not $global:PS10K_HOOKS) {
     $global:PS10K_HOOKS = @{
-        precmd = New-Object System.Collections.ArrayList
-        chpwd  = New-Object System.Collections.ArrayList
+        precmd  = New-Object System.Collections.ArrayList
+        chpwd   = New-Object System.Collections.ArrayList
+        preexec = New-Object System.Collections.ArrayList
     }
 }
 
 function global:Add-PS10kHook {
     param(
-        [Parameter(Mandatory)][ValidateSet('precmd', 'chpwd')][string]$Type,
+        [Parameter(Mandatory)][ValidateSet('precmd', 'chpwd', 'preexec')][string]$Type,
         [Parameter(Mandatory)][scriptblock]$Action
     )
     [void]$global:PS10K_HOOKS[$Type].Add($Action)
@@ -35,4 +38,30 @@ function global:_ps10k_hooks_before_prompt {
         _ps10k_run_hooks -Type chpwd -Context $Context
     }
     _ps10k_run_hooks -Type precmd -Context $Context
+}
+
+# True when the PSReadLine buffer parses; Enter on an incomplete line only
+# starts a continuation line, so preexec hooks must not run then.
+function global:_ps10k_line_complete {
+    $ast = $null; $tokens = $null; $parseErrors = $null; $cursor = $null
+    [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$ast, [ref]$tokens, [ref]$parseErrors, [ref]$cursor)
+    -not $parseErrors -or $parseErrors.Count -eq 0
+}
+
+function global:_ps10k_accept_line {
+    if (_ps10k_line_complete) { _ps10k_run_hooks -Type preexec }
+    [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
+}
+
+# Binds Enter to _ps10k_accept_line, in both vi tables when vi mode is on.
+function global:_ps10k_bind_accept_line {
+    if (-not (Get-Module PSReadLine)) { return }
+    $handler = @{
+        Chord            = 'Enter'
+        BriefDescription = 'PS10kAcceptLine'
+        Description      = 'Run powershell10k preexec hooks, then accept the line'
+        ScriptBlock      = { _ps10k_accept_line }
+    }
+    Set-PSReadLineKeyHandler @handler
+    if ((Get-PSReadLineOption).EditMode -eq 'Vi') { Set-PSReadLineKeyHandler @handler -ViMode Command }
 }
