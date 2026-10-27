@@ -31,7 +31,7 @@ function global:_ps10k_find_up([string]$Path, [string[]]$Names) {
 function global:_ps10k_format_duration([TimeSpan]$Duration, [int]$Precision) {
     $total = $Duration.TotalSeconds
     if ($total -lt 60) {
-        if ($Precision -gt 0) { return ('{0:F' + $Precision + '}s') -f $total }
+        if ($Precision -gt 0) { return [string]::Format([Globalization.CultureInfo]::InvariantCulture, '{0:F' + $Precision + '}s', $total) }
         return '{0}s' -f [int][Math]::Floor($total)
     }
     $parts = @()
