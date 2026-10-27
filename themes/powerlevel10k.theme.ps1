@@ -13,9 +13,14 @@ $env:VIRTUAL_ENV_DISABLE_PROMPT = '1'
 
 _ps10k_setup_psreadline
 
+# Like powerlevel10k, start the wizard on the first interactive start without a
+# config. Set $env:PS10K_DISABLE_WIZARD = '1' to only print a hint instead.
 if (-not (Test-Path -LiteralPath (_ps10k_config_path)) -and -not $global:_ps10k_hinted) {
     $global:_ps10k_hinted = $true
-    Write-Host 'powershell10k: run ' -NoNewline
-    Write-Host 'p10k configure' -ForegroundColor Cyan -NoNewline
-    Write-Host ' to customize your prompt.'
+    if ((_ps10k_can_prompt) -and -not $env:PS10K_DISABLE_WIZARD) { _ps10k_configure }
+    else {
+        Write-Host 'powershell10k: run ' -NoNewline
+        Write-Host 'p10k configure' -ForegroundColor Cyan -NoNewline
+        Write-Host ' to customize your prompt.'
+    }
 }
