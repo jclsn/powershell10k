@@ -28,9 +28,11 @@ PowerShell 7, and **installs without administrator rights**.
   to step through every earlier command that starts with `git`.
 - **zsh-autosuggestions**: grey inline suggestions from history with
   PSReadLine 2.1+ (the installer offers a current-user upgrade).
+- **vi mode** (`bindkey -v`): opt-in `vi-mode` plugin with a bar/block cursor
+  and a prompt char that flips to `❮` in command mode.
 - **oh-my-zsh plugins**: `git` (about 80 aliases plus tab completion), `z`,
-  `aliases`, `autosuggestions`, `syntax-highlighting`, `extract`, `web-search`,
-  `copypath`.
+  `aliases`, `autosuggestions`, `syntax-highlighting`, `vi-mode`, `extract`,
+  `web-search`, `copypath`.
 - `custom/` folder for your own plugins, themes and segments, like `$ZSH_CUSTOM`.
 
 ## Install
@@ -89,7 +91,7 @@ $global:PS10K_PLUGINS = @('git', 'z', 'aliases', 'autosuggestions', 'syntax-high
 ```
 
 Keep `syntax-highlighting` after `autosuggestions` so history navigation gets
-highlighted too.
+highlighted too. `vi-mode` can go anywhere in the list; it always loads first.
 
 ### Configuration
 
@@ -119,6 +121,7 @@ $PS10K_SEGMENTS['hello'] = { param($ctx) @{ IconText = '*'; Text = 'hi'; Fg = 0;
 | `aliases` | `..`, `...`, `ll`, `la`, `take`/`mkcd`, `touch`, `which`, `grep` (if missing), `hs` (search saved history), `path`. |
 | `autosuggestions` | prefix history search on Up/Down, menu completion on Tab, inline suggestions (PSReadLine 2.1+). |
 | `syntax-highlighting` | live green/red command validation plus a token color palette. |
+| `vi-mode` | vi key bindings like `bindkey -v`: <kbd>Esc</kbd> for command mode, blinking bar cursor in insert mode and block in command mode, `❯`/`❮` prompt char, <kbd>Up</kbd>/<kbd>Down</kbd> and `k`/`j` prefix history search, <kbd>Ctrl</kbd>+<kbd>r</kbd>, `v` to edit the line in `$env:EDITOR`. Cursor shapes: `$PS10K_VI_CURSOR_INSERT`/`$PS10K_VI_CURSOR_NORMAL` (DECSCUSR numbers), `$PS10K_VI_CURSOR = $false` to leave the cursor alone. The cursor and prompt char switch need PSReadLine 2.1+. |
 | `extract` | `extract file.zip` / `x file.tar.gz` |
 | `web-search` | `google`, `ddg`, `bing`, `github`, `stackoverflow`, `wiki`, `youtube` |
 | `copypath` | `copypath [path]`, `copyfile <file>` |
