@@ -43,16 +43,17 @@ cd powershell10k
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-(A downloaded and unzipped copy works the same way.) Then restart Windows
-Terminal. The configuration wizard starts in the first new tab.
+(A downloaded and unzipped copy works the same way.) The installer needs no
+internet access: the font is bundled. Then restart Windows Terminal. The
+configuration wizard starts in the first new tab.
 
 ### What the installer touches (everything is per-user)
 
 | What | Where |
 | --- | --- |
 | Framework files | `~\.powershell10k` (`-InstallDir` to change) |
-| MesloLGS NF font | `%LOCALAPPDATA%\Microsoft\Windows\Fonts` + `HKCU:\...\Fonts` (Windows 10 1809+) |
-| Windows Terminal font | `profiles.defaults.font.face` in its `settings.json`, backup saved next to it |
+| JetBrainsMono Nerd Font (bundled in `fonts\`) | `%LOCALAPPDATA%\Microsoft\Windows\Fonts` + `HKCU:\...\Fonts` (Windows 10 1809+) |
+| Windows Terminal | `profiles.defaults.font.face` and `-NoLogo` on PowerShell profiles (hides the banner and the profile load time) in its `settings.json`, backup saved next to it |
 | Profile | a marked block in `Documents\WindowsPowerShell\` and `Documents\PowerShell\` profiles, backups saved next to them |
 | Execution policy | `RemoteSigned` for `CurrentUser`, only if scripts are blocked |
 | PSReadLine | optional upgrade with `Install-Module -Scope CurrentUser` |
@@ -64,6 +65,7 @@ Nothing goes to Program Files or HKLM, and nothing asks for elevation.
 ```powershell
 .\install.ps1 -Plugins git,z,aliases,autosuggestions,syntax-highlighting
 .\install.ps1 -SkipFont -SkipTerminal       # bring your own Nerd Font
+.\install.ps1 -KeepLogo                     # keep the PowerShell startup banner
 .\install.ps1 -UpgradePSReadLine            # upgrade without asking
 .\install.ps1 -RepoUrl https://github.com/<you>/powershell10k.git   # git install, enables `ps10k update`
 ```
@@ -119,7 +121,7 @@ $PS10K_SEGMENTS['hello'] = { param($ctx) @{ IconText = '*'; Text = 'hi'; Fg = 0;
 | `git` | `gst`, `ga`, `gaa`, `gc`, `gcmsg`, `gco`, `gcb`, `gd`, `gl`, `gp`, `gpsup`, `glog`, `grb`, `gsta`, `gstp`, `gsw`... and completion for subcommands, branches and remotes. The built-in `gc`, `gl` and `gp` aliases are replaced; `gm` and `gcm` stay `Get-Member`/`Get-Command` unless you set `$PS10K_GIT_OVERRIDE = @('gm','gcm')`. |
 | `z` | `z proj` jumps to the most frecent match, `z -l`, `z -x`, `z -c`. |
 | `aliases` | `..`, `...`, `ll`, `la`, `take`/`mkcd`, `touch`, `which`, `grep` (if missing), `hs` (search saved history), `path`. |
-| `autosuggestions` | prefix history search on Up/Down, menu completion on Tab, inline suggestions (PSReadLine 2.1+). |
+| `autosuggestions` | prefix history search on Up/Down, menu completion on Tab (without the full-path tooltip), inline suggestions (PSReadLine 2.1+). |
 | `syntax-highlighting` | live green/red command validation plus a token color palette. |
 | `vi-mode` | vi key bindings like `bindkey -v`: <kbd>Esc</kbd> for command mode, blinking bar cursor in insert mode and block in command mode, `❯`/`❮` prompt char, <kbd>Up</kbd>/<kbd>Down</kbd> and `k`/`j` prefix history search, <kbd>Ctrl</kbd>+<kbd>r</kbd>, `v` to edit the line in `$env:EDITOR`. Cursor shapes: `$PS10K_VI_CURSOR_INSERT`/`$PS10K_VI_CURSOR_NORMAL` (DECSCUSR numbers), `$PS10K_VI_CURSOR = $false` to leave the cursor alone. The cursor and prompt char switch need PSReadLine 2.1+. |
 | `extract` | `extract file.zip` / `x file.tar.gz` |
@@ -135,8 +137,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-tests.ps1
 ## Credits
 
 Inspired by [oh-my-zsh](https://github.com/ohmyzsh/ohmyzsh) and
-[powerlevel10k](https://github.com/romkatv/powerlevel10k); the MesloLGS NF
-font comes from [powerlevel10k-media](https://github.com/romkatv/powerlevel10k-media).
+[powerlevel10k](https://github.com/romkatv/powerlevel10k). The bundled font is
+[JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) patched by
+[Nerd Fonts](https://www.nerdfonts.com), under the SIL Open Font License 1.1
+([fonts/OFL.txt](fonts/OFL.txt)).
 This project is an independent PowerShell implementation.
 
 ## License
