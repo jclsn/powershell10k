@@ -36,6 +36,11 @@ function global:_ps10k_doctor {
     $cfg = _ps10k_config_path
     if (Test-Path -LiteralPath $cfg) { Write-Host "$ok config $cfg" } else { Write-Host "$warn no config yet, run: p10k configure" }
     Write-Host "$ok theme $($global:PS10K_THEME), plugins: $(@($global:PS10K_PLUGINS) -join ', ')"
+    if ($ExecutionContext.SessionState.LanguageMode -ne 'FullLanguage') {
+        Write-Host "$warn language mode is $($ExecutionContext.SessionState.LanguageMode); key handlers and the prompt need FullLanguage"
+    }
+    foreach ($message in @($global:PS10K_LOAD_ERRORS)) { if ($message) { Write-Host "$warn $message" } }
+    Write-Host "       For a full report: . `"$env:PS10K_HOME\tools\diagnose.ps1`""
     if ($global:_ps10k_state -and $global:_ps10k_state.Errors.Count -gt 0) {
         foreach ($name in $global:_ps10k_state.Errors.Keys) { Write-Host "$warn segment ${name}: $($global:_ps10k_state.Errors[$name])" }
     }
