@@ -5,8 +5,10 @@
 .DESCRIPTION
     Everything is written to user locations only:
       - framework files      -> ~\.powershell10k (or -InstallDir)
-      - MesloLGS NF font     -> %LOCALAPPDATA%\Microsoft\Windows\Fonts + HKCU registry
-      - Windows Terminal     -> its settings.json under %LOCALAPPDATA% (backed up first)
+      - JetBrains Mono NF    -> %LOCALAPPDATA%\Microsoft\Windows\Fonts + HKCU registry
+                                (bundled in fonts\, nothing is downloaded)
+      - Windows Terminal     -> its settings.json under %LOCALAPPDATA% (backed up first):
+                                font, and -NoLogo for PowerShell profiles
       - PowerShell profile   -> your Documents\(Windows)PowerShell profile (backed up first)
       - execution policy     -> CurrentUser scope, only when scripts are blocked
       - PSReadLine upgrade   -> optional, CurrentUser scope
@@ -25,11 +27,12 @@ param(
     [string[]]$ProfilePath,
     [string]$Theme = 'powerlevel10k',
     [string[]]$Plugins = @('git', 'z', 'aliases', 'autosuggestions', 'syntax-highlighting', 'extract', 'copypath'),
-    [string]$FontFace = 'MesloLGS NF',
+    [string]$FontFace = 'JetBrainsMono Nerd Font',
     [string[]]$TerminalSettingsPath,
     [string]$RepoUrl,
     [switch]$SkipFont,
     [switch]$SkipTerminal,
+    [switch]$KeepLogo,
     [switch]$SkipProfile,
     [switch]$SkipExecutionPolicy,
     [switch]$UpgradePSReadLine,
@@ -40,8 +43,13 @@ $ErrorActionPreference = 'Stop'
 
 $script:BeginMarker = '# >>> powershell10k >>>'
 $script:EndMarker = '# <<< powershell10k <<<'
-$script:FontBaseUrl = 'https://github.com/romkatv/powerlevel10k-media/raw/master'
-$script:FontFiles = @('MesloLGS NF Regular.ttf', 'MesloLGS NF Bold.ttf', 'MesloLGS NF Italic.ttf', 'MesloLGS NF Bold Italic.ttf')
+# Bundled font files (fonts\) and the names Windows registers them under.
+$script:FontFiles = [ordered]@{
+    'JetBrainsMonoNerdFont-Regular.ttf'    = 'JetBrainsMono NF Regular (TrueType)'
+    'JetBrainsMonoNerdFont-Bold.ttf'       = 'JetBrainsMono NF Bold (TrueType)'
+    'JetBrainsMonoNerdFont-Italic.ttf'     = 'JetBrainsMono NF Italic (TrueType)'
+    'JetBrainsMonoNerdFont-BoldItalic.ttf' = 'JetBrainsMono NF Bold Italic (TrueType)'
+}
 $script:Timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 
 function Write-Step([string]$Text) { Write-Host "==> $Text" -ForegroundColor Cyan }
@@ -148,15 +156,38 @@ function Get-TerminalSettingsPaths {
     ) | Where-Object { Test-Path -LiteralPath $_ }
 }
 
-function Set-TerminalFont([string]$Path, [string]$Face) {
+# Adds -NoLogo to a powershell.exe / pwsh.exe command line, which hides the
+# copyright banner and the "Loading personal and system profiles took" line.
+function Add-NoLogo([string]$CommandLine) {
+    if ($CommandLine -notmatch '(?i)(^|[\\/"\s])(powershell|pwsh)(\.exe)?"?(\s|$)') { return $CommandLine }
+    if ($CommandLine -match '(?i)\s-nol(o(go?)?)?(\s|$)') { return $CommandLine }
+    # Leave command lines that run a script or command alone.
+    if ($CommandLine -match '(?i)\s-(c|command|f|file|e|encodedcommand)(\s|$)') { return $CommandLine }
+    $CommandLine.TrimEnd() + ' -NoLogo'
+}
+
+# Windows Terminal's built-in "Windows PowerShell" profile.
+$script:WindowsPowerShellProfileGuid = '{61c54bbd-c2c6-5271-96e7-009a87ff44bf}'
+
+function Update-TerminalSettings([string]$Path, [string]$Face, [switch]$NoLogo) {
     $settings = ConvertFrom-Jsonc ([IO.File]::ReadAllText($Path))
     if (-not $settings.PSObject.Properties['profiles']) { Set-JsonProperty $settings 'profiles' ([pscustomobject]@{}) }
     $profiles = $settings.profiles
-    if ($profiles -is [array]) {
+    $list = if ($profiles -is [array]) { $profiles } else { @($profiles.list) }
+    if ($NoLogo) {
+        foreach ($p in $list) {
+            if ($null -eq $p -or $p.PSObject.Properties['source']) { continue }
+            if ($p.PSObject.Properties['commandline']) { $p.commandline = Add-NoLogo $p.commandline }
+            elseif ($p.guid -eq $script:WindowsPowerShellProfileGuid) {
+                Set-JsonProperty $p 'commandline' '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo'
+            }
+        }
+    }
+    if ($Face -and $profiles -is [array]) {
         # Very old schema: profiles is a plain list.
         foreach ($p in $profiles) { Set-JsonProperty $p 'fontFace' $Face }
     }
-    else {
+    elseif ($Face) {
         if (-not $profiles.PSObject.Properties['defaults'] -or $null -eq $profiles.defaults) {
             Set-JsonProperty $profiles 'defaults' ([pscustomobject]@{})
         }
@@ -167,7 +198,7 @@ function Set-TerminalFont([string]$Path, [string]$Face) {
         }
         Set-JsonProperty $defaults.font 'face' $Face
         # A profile-level font would override the default; update those as well.
-        foreach ($p in @($profiles.list)) {
+        foreach ($p in $list) {
             if ($null -eq $p) { continue }
             if ($p.PSObject.Properties['fontFace']) { $p.fontFace = $Face }
             if ($p.PSObject.Properties['font'] -and $p.font -and $p.font.PSObject.Properties['face']) { $p.font.face = $Face }
@@ -178,18 +209,17 @@ function Set-TerminalFont([string]$Path, [string]$Face) {
     [IO.File]::WriteAllText($Path, $json, (New-Object System.Text.UTF8Encoding $false))
 }
 
-function Install-UserFonts([string]$Face) {
+function Install-UserFonts([string]$Source) {
     $build = [Environment]::OSVersion.Version.Build
     if ($build -lt 17763) {
         Write-Warn "Per-user fonts need Windows 10 1809 or newer (this is build $build)."
-        Write-Warn "Download MesloLGS NF from $($script:FontBaseUrl) and install it manually."
+        Write-Warn "Install the fonts in $Source manually (right-click > Install)."
         return $false
     }
     $fontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
     $regKey = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
     if (-not (Test-Path -LiteralPath $fontDir)) { New-Item -ItemType Directory -Path $fontDir -Force | Out-Null }
     if (-not (Test-Path -LiteralPath $regKey)) { New-Item -Path $regKey -Force | Out-Null }
-    Enable-Tls12
 
     Add-Type -Namespace PS10k -Name Gdi -ErrorAction SilentlyContinue -MemberDefinition @'
 [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
@@ -198,17 +228,15 @@ public static extern int AddFontResource(string lpFileName);
 public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
 '@
 
-    foreach ($file in $script:FontFiles) {
+    foreach ($file in $script:FontFiles.Keys) {
         $target = Join-Path $fontDir $file
-        $valueName = ($file -replace '\.ttf$', '') + ' (TrueType)'
+        $valueName = $script:FontFiles[$file]
         $registered = Get-ItemProperty -Path $regKey -Name $valueName -ErrorAction SilentlyContinue
         if ((Test-Path -LiteralPath $target) -and $registered) { Write-Info "$file already installed"; continue }
-        $url = "$($script:FontBaseUrl)/$([uri]::EscapeDataString($file))"
-        Write-Info "downloading $file"
-        $tmp = Join-Path ([IO.Path]::GetTempPath()) ("ps10k-" + [guid]::NewGuid() + '.ttf')
-        Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
-        Move-Item -LiteralPath $tmp -Destination $target -Force
-        Unblock-File -LiteralPath $target -ErrorAction SilentlyContinue
+        $bundled = Join-Path $Source $file
+        if (-not (Test-Path -LiteralPath $bundled)) { throw "bundled font missing: $bundled" }
+        Write-Info "installing $file"
+        Copy-Item -LiteralPath $bundled -Destination $target -Force
         New-ItemProperty -Path $regKey -Name $valueName -Value $target -PropertyType String -Force | Out-Null
         try { [void][PS10k.Gdi]::AddFontResource($target) } catch { }
     }
@@ -300,16 +328,19 @@ function Invoke-Install {
 
     if (-not $SkipFont) {
         Write-Step "Installing $FontFace font for the current user"
-        try { [void](Install-UserFonts -Face $FontFace) }
+        try { [void](Install-UserFonts -Source (Join-Path $InstallDir 'fonts')) }
         catch { Write-Warn "font installation failed: $_" }
     }
 
     if (-not $SkipTerminal) {
         Write-Step 'Configuring Windows Terminal'
         $paths = if ($TerminalSettingsPath) { $TerminalSettingsPath } else { @(Get-TerminalSettingsPaths) }
-        if (-not $paths) { Write-Info 'Windows Terminal settings not found; set the font to MesloLGS NF yourself.' }
+        if (-not $paths) { Write-Info "Windows Terminal settings not found; set the font to $FontFace yourself." }
         foreach ($path in $paths) {
-            try { Set-TerminalFont -Path $path -Face $FontFace; Write-Info "font set in $path (backup next to it)" }
+            try {
+                Update-TerminalSettings -Path $path -Face $FontFace -NoLogo:(-not $KeepLogo)
+                Write-Info "font$(if (-not $KeepLogo) { ' and -NoLogo' }) set in $path (backup next to it)"
+            }
             catch { Write-Warn "could not update ${path}: $_" }
         }
     }

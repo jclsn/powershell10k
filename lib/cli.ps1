@@ -5,7 +5,7 @@ function global:_ps10k_version {
     if (Test-Path -LiteralPath $file) { (Get-Content -LiteralPath $file -TotalCount 1).Trim() } else { 'unknown' }
 }
 
-function global:_ps10k_font_installed([string]$Family = 'MesloLGS NF') {
+function global:_ps10k_font_installed([string]$Family = 'JetBrainsMono NF') {
     foreach ($key in 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts', 'HKLM:\Software\Microsoft\Windows NT\CurrentVersion\Fonts') {
         $props = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue
         if ($props -and @($props.PSObject.Properties.Name | Where-Object { $_ -like "$Family*" }).Count -gt 0) { return $true }
@@ -26,8 +26,8 @@ function global:_ps10k_doctor {
     else { Write-Host "$ok PSReadLine $($psrl.Version)" }
     if (Get-Command git -CommandType Application -ErrorAction SilentlyContinue) { Write-Host "$ok git found" }
     else { Write-Host "$warn git not found: the git segment and plugin need it" }
-    if (_ps10k_font_installed) { Write-Host "$ok MesloLGS NF font installed" }
-    else { Write-Host "$warn MesloLGS NF not installed: re-run install.ps1 or pick another Nerd Font" }
+    if (_ps10k_font_installed) { Write-Host "$ok JetBrainsMono Nerd Font installed" }
+    else { Write-Host "$warn JetBrainsMono Nerd Font not installed: re-run install.ps1 or pick another Nerd Font" }
     if ($env:WT_SESSION) { Write-Host "$ok running in Windows Terminal" }
     else { Write-Host "$warn not running in Windows Terminal; glyphs and colors may not render" }
     $policy = Get-ExecutionPolicy

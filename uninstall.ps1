@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Removes the powershell10k block from your profiles. Optionally deletes the
-    framework folder, ~/.p10k.ps1, the z database and the MesloLGS NF font.
+    framework folder, ~/.p10k.ps1, the z database and the bundled JetBrainsMono Nerd Font.
     Windows Terminal settings are left alone; install.ps1 left a backup
     (settings.json.ps10k-<timestamp>.bak) next to them if you want to restore it.
 
@@ -56,14 +56,20 @@ if ($RemoveConfig) {
 if ($RemoveFonts) {
     $fontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
     $regKey = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
-    foreach ($name in 'MesloLGS NF Regular', 'MesloLGS NF Bold', 'MesloLGS NF Italic', 'MesloLGS NF Bold Italic') {
-        Remove-ItemProperty -Path $regKey -Name "$name (TrueType)" -ErrorAction SilentlyContinue
-        $file = Join-Path $fontDir "$name.ttf"
+    $fonts = [ordered]@{
+        'JetBrainsMonoNerdFont-Regular.ttf'    = 'JetBrainsMono NF Regular (TrueType)'
+        'JetBrainsMonoNerdFont-Bold.ttf'       = 'JetBrainsMono NF Bold (TrueType)'
+        'JetBrainsMonoNerdFont-Italic.ttf'     = 'JetBrainsMono NF Italic (TrueType)'
+        'JetBrainsMonoNerdFont-BoldItalic.ttf' = 'JetBrainsMono NF Bold Italic (TrueType)'
+    }
+    foreach ($name in $fonts.Keys) {
+        Remove-ItemProperty -Path $regKey -Name $fonts[$name] -ErrorAction SilentlyContinue
+        $file = Join-Path $fontDir $name
         # A font in use stays locked until sign-out; it is unregistered either way.
         try { if (Test-Path -LiteralPath $file) { Remove-Item -LiteralPath $file -Force } }
         catch { Write-Warning "could not delete $file (in use); it is no longer registered and can be deleted after sign-out" }
     }
-    Write-Host 'removed MesloLGS NF registration for the current user'
+    Write-Host 'removed JetBrainsMono Nerd Font registration for the current user'
 }
 
 if ($RemoveFiles) {

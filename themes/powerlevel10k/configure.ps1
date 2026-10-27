@@ -99,7 +99,7 @@ function global:_ps10k_configure {
                 Write-Host '    (y) Yes.'
                 Write-Host '    (n) No.'
                 Write-Host ''
-                Write-Host '    Tip: install.ps1 installs the MesloLGS NF font and selects it in' -ForegroundColor DarkGray
+                Write-Host '    Tip: install.ps1 installs JetBrainsMono Nerd Font and selects it in' -ForegroundColor DarkGray
                 Write-Host '    Windows Terminal. Restart the terminal after installing.' -ForegroundColor DarkGray
                 $a.Mode = if ((_ps10k_wizard_key 'y', 'n') -eq 'y') { 'unicode' } else { 'ascii' }
             }

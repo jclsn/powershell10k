@@ -1,4 +1,4 @@
-# Glyph sets. 'nerdfont' needs a Nerd Font such as MesloLGS NF (installed by
+# Glyph sets. 'nerdfont' needs a Nerd Font such as JetBrainsMono Nerd Font (installed by
 # install.ps1), 'unicode' works with any modern font, 'ascii' works everywhere.
 
 $global:PS10K_ICON_SETS = @{
