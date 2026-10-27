@@ -18,6 +18,12 @@ try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } c
 
 # Start from a clean slate so `ps10k reload` does not register hooks twice.
 $global:PS10K_HOOKS = $null
+# Load problems, shown as warnings and kept for `ps10k doctor`.
+$global:PS10K_LOAD_ERRORS = New-Object System.Collections.ArrayList
+function global:_ps10k_load_error([string]$Message) {
+    [void]$global:PS10K_LOAD_ERRORS.Add($Message)
+    Write-Warning "powershell10k: $Message"
+}
 
 foreach ($ps10kFile in @(Get-ChildItem -LiteralPath (Join-Path $env:PS10K_HOME 'lib') -Filter '*.ps1' | Sort-Object Name)) {
     . $ps10kFile.FullName
@@ -41,15 +47,21 @@ foreach ($ps10kPlugin in $ps10kPlugins) {
     $ps10kPath = _ps10k_find_plugin $ps10kPlugin
     if ($ps10kPath) {
         try { . $ps10kPath }
-        catch { Write-Warning "powershell10k: plugin '$ps10kPlugin' failed to load: $_" }
+        catch { _ps10k_load_error "plugin '$ps10kPlugin' failed to load: $_" }
     }
-    else { Write-Warning "powershell10k: plugin '$ps10kPlugin' not found" }
+    else { _ps10k_load_error "plugin '$ps10kPlugin' not found" }
+}
+# These plugins skip themselves without PSReadLine; say so in an interactive
+# console, where PSReadLine is normally loaded before the profile runs.
+$ps10kNeedPsrl = @($ps10kPlugins | Where-Object { $_ -in 'autosuggestions', 'syntax-highlighting', 'vi-mode' })
+if ($ps10kNeedPsrl -and -not (Get-Module PSReadLine) -and $Host.Name -eq 'ConsoleHost' -and -not [Console]::IsInputRedirected) {
+    _ps10k_load_error "PSReadLine is not loaded, so $($ps10kNeedPsrl -join ', ') are inactive. Run ps10k doctor."
 }
 
 if ($global:PS10K_THEME) {
     $ps10kPath = _ps10k_find_theme $global:PS10K_THEME
     if ($ps10kPath) { . $ps10kPath }
-    else { Write-Warning "powershell10k: theme '$($global:PS10K_THEME)' not found" }
+    else { _ps10k_load_error "theme '$($global:PS10K_THEME)' not found" }
 }
 
-Remove-Variable -Name ps10kFile, ps10kPlugins, ps10kPlugin, ps10kPath -ErrorAction SilentlyContinue
+Remove-Variable -Name ps10kFile, ps10kPlugins, ps10kPlugin, ps10kPath, ps10kNeedPsrl -ErrorAction SilentlyContinue
