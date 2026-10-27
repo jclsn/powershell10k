@@ -125,12 +125,6 @@ $PS10K_SEGMENTS['hello'] = { param($ctx) @{ IconText = '*'; Text = 'hi'; Fg = 0;
 | `web-search` | `google`, `ddg`, `bing`, `github`, `stackoverflow`, `wiki`, `youtube` |
 | `copypath` | `copypath [path]`, `copyfile <file>` |
 
-## Tests
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-tests.ps1
-```
-
 ## Credits
 
 Inspired by [oh-my-zsh](https://github.com/ohmyzsh/ohmyzsh) and
