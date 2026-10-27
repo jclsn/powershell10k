@@ -235,11 +235,33 @@ Test-Case 'JSONC comments and trailing commas are handled' {
 Test-Case 'terminal font is set in profiles.defaults' {
     $settings = Join-Path $work 'settings.json'
     Set-Content -LiteralPath $settings -Value '{ "profiles": { "defaults": { "fontFace": "Consolas" }, "list": [ { "name": "a", "font": { "face": "Cascadia" } } ] }, }'
-    Set-TerminalFont -Path $settings -Face 'MesloLGS NF'
+    Update-TerminalSettings -Path $settings -Face 'JetBrainsMono Nerd Font'
     $obj = Get-Content -LiteralPath $settings -Raw | ConvertFrom-Json
-    Assert-Equal 'MesloLGS NF' $obj.profiles.defaults.font.face
+    Assert-Equal 'JetBrainsMono Nerd Font' $obj.profiles.defaults.font.face
     Assert-True ($null -eq $obj.profiles.defaults.fontFace)
-    Assert-Equal 'MesloLGS NF' $obj.profiles.list[0].font.face
+    Assert-Equal 'JetBrainsMono Nerd Font' $obj.profiles.list[0].font.face
+}
+
+Test-Case 'PowerShell profiles in Windows Terminal get -NoLogo' {
+    Assert-Equal '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo' (Add-NoLogo '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe')
+    Assert-Equal '"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo' (Add-NoLogo '"C:\Program Files\PowerShell\7\pwsh.exe"')
+    Assert-Equal 'pwsh.exe -nologo' (Add-NoLogo 'pwsh.exe -nologo')
+    Assert-Equal 'powershell.exe -File x.ps1' (Add-NoLogo 'powershell.exe -File x.ps1')
+    Assert-Equal 'cmd.exe' (Add-NoLogo 'cmd.exe')
+    $settings = Join-Path $work 'settings-logo.json'
+    Set-Content -LiteralPath $settings -Value '{ "profiles": { "list": [ { "guid": "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}", "name": "Windows PowerShell" }, { "commandline": "cmd.exe" }, { "source": "Windows.Terminal.PowershellCore" } ] } }'
+    Update-TerminalSettings -Path $settings -NoLogo
+    $obj = Get-Content -LiteralPath $settings -Raw | ConvertFrom-Json
+    Assert-Equal '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo' $obj.profiles.list[0].commandline
+    Assert-Equal 'cmd.exe' $obj.profiles.list[1].commandline
+    Assert-True ($null -eq $obj.profiles.list[2].commandline) 'dynamic profiles are left alone'
+    Assert-True ($null -eq $obj.profiles.defaults) 'no font requested, none set'
+}
+
+Test-Case 'bundled fonts match the installer list' {
+    foreach ($file in $script:FontFiles.Keys) { Assert-True (Test-Path (Join-Path $root "fonts\$file")) "missing fonts\$file" }
+    Assert-True (Test-Path (Join-Path $root 'fonts\OFL.txt')) 'font license missing'
+    Assert-True ((Get-Content (Join-Path $root 'install.ps1') -Raw) -notmatch 'Invoke-WebRequest[^\r\n]*\.ttf') 'fonts must not be downloaded'
 }
 
 Test-Case 'profile block install is idempotent and removable' {
