@@ -17,7 +17,8 @@ if (Get-Module PSReadLine) {
     Set-PSReadLineKeyHandler -Key Shift+Tab -Function TabCompletePrevious
 
     if ($ps10kPsrl -ge [version]'2.1.0') {
-        Set-PSReadLineOption -PredictionSource History
+        # Throws when output is redirected (no virtual terminal), e.g. in scripts.
+        try { Set-PSReadLineOption -PredictionSource History } catch { }
         Set-PSReadLineOption -Colors @{ InlinePrediction = "$([char]27)[38;5;244m" }
         Set-PSReadLineKeyHandler -Key RightArrow -Function ForwardChar
         Set-PSReadLineKeyHandler -Key End -Function EndOfLine
