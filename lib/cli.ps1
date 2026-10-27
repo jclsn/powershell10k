@@ -20,8 +20,8 @@ function global:_ps10k_doctor {
     Write-Host "$ok PowerShell $($PSVersionTable.PSVersion) ($($PSVersionTable.PSEdition))"
     if (-not $psrl) { Write-Host "$warn PSReadLine is not loaded" }
     elseif ($psrl.Version -lt [version]'2.1.0') {
-        Write-Host "$warn PSReadLine $($psrl.Version): inline suggestions need 2.1+. Upgrade for your user only (no admin):"
-        Write-Host '       Install-Module PSReadLine -Scope CurrentUser -Force -SkipPublisherCheck'
+        Write-Host "$warn PSReadLine $($psrl.Version): inline suggestions and the vi-mode cursor need 2.1+."
+        Write-Host '       Re-run install.ps1: it installs the bundled PSReadLine for your user (no admin, no download).'
     }
     else { Write-Host "$ok PSReadLine $($psrl.Version)" }
     if (Get-Command git -CommandType Application -ErrorAction SilentlyContinue) { Write-Host "$ok git found" }

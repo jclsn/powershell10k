@@ -11,7 +11,8 @@
                                 font, and -NoLogo for PowerShell profiles
       - PowerShell profile   -> your Documents\(Windows)PowerShell profile (backed up first)
       - execution policy     -> CurrentUser scope, only when scripts are blocked
-      - PSReadLine upgrade   -> optional, CurrentUser scope
+      - PSReadLine 2.4.5     -> Documents\WindowsPowerShell\Modules (bundled in
+                                modules\, only when the installed one is older)
 
     If scripts are blocked on your machine, start it like this:
         powershell -ExecutionPolicy Bypass -File .\install.ps1
@@ -35,7 +36,6 @@ param(
     [switch]$KeepLogo,
     [switch]$SkipProfile,
     [switch]$SkipExecutionPolicy,
-    [switch]$UpgradePSReadLine,
     [switch]$NoPSReadLineUpgrade
 )
 
@@ -64,10 +64,6 @@ function Test-IsAdmin {
             [Security.Principal.WindowsBuiltInRole]::Administrator)
     }
     catch { $false }
-}
-
-function Enable-Tls12 {
-    try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
 }
 
 function Get-DefaultProfilePaths {
@@ -307,18 +303,37 @@ function Set-UserExecutionPolicy {
     Write-Info 'set execution policy RemoteSigned for the current user (Windows PowerShell)'
 }
 
-function Update-UserPSReadLine {
-    Enable-Tls12
-    if (-not (Get-PackageProvider -ListAvailable -Name NuGet -ErrorAction SilentlyContinue | Where-Object { $_.Version -ge [version]'2.8.5.201' })) {
-        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Scope CurrentUser -Force | Out-Null
+# Copies the bundled PSReadLine (modules\PSReadLine\<version>) to the
+# current user's Windows PowerShell module folder, unless the installed
+# PSReadLine is already that new. A user module folder needs no admin rights.
+function Install-UserPSReadLine([string]$Source) {
+    $bundled = Get-ChildItem -LiteralPath (Join-Path $Source 'PSReadLine') -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -as [version] } | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+    if (-not $bundled) { throw "no bundled PSReadLine in $Source" }
+    $version = [version]$bundled.Name
+    $installed = Get-Module -ListAvailable PSReadLine | Sort-Object Version -Descending | Select-Object -First 1
+    if ($installed -and $installed.Version -ge $version) {
+        Write-Info "PSReadLine $($installed.Version) is already installed"
+        return
     }
-    Install-Module -Name PSReadLine -Scope CurrentUser -Force -SkipPublisherCheck -AllowClobber -Repository PSGallery
+    $target = Join-Path (Get-UserModulePath) "PSReadLine\$($bundled.Name)"
+    New-Item -ItemType Directory -Path $target -Force | Out-Null
+    Copy-Item -Path (Join-Path $bundled.FullName '*') -Destination $target -Recurse -Force
+    Get-ChildItem -LiteralPath $target -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
+    Write-Info "installed PSReadLine $version to $target; it is used from the next session on"
 }
 
-function Test-Interactive {
-    if ($Host.Name -ne 'ConsoleHost') { return $false }
-    try { if ([Console]::IsInputRedirected) { return $false } } catch { return $false }
-    @([Environment]::GetCommandLineArgs() | Where-Object { $_ -match '^-noni' }).Count -eq 0
+function Get-UserModulePath {
+    Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'WindowsPowerShell\Modules'
+}
+
+# How to get PSReadLine by hand when the bundled copy cannot be installed.
+function Write-PSReadLineHelp {
+    Write-Warn 'Install PSReadLine 2.1 or newer by hand (no admin needed):'
+    Write-Info '  on a machine with internet:  Save-Module PSReadLine -Path C:\temp\modules'
+    Write-Info "  then copy C:\temp\modules\PSReadLine to $(Get-UserModulePath)\"
+    Write-Info '  or download the .nupkg from https://www.powershellgallery.com/packages/PSReadLine,'
+    Write-Info '  rename it to .zip and extract it to that folder as PSReadLine\<version>'
 }
 
 # `powershell -File install.ps1 -Plugins a,b` passes the list as one string.
@@ -386,18 +401,12 @@ function Invoke-Install {
         try { Set-UserExecutionPolicy } catch { Write-Warn "could not set execution policy: $_" }
     }
 
-    $psrl = Get-Module -ListAvailable PSReadLine | Sort-Object Version -Descending | Select-Object -First 1
-    if ($psrl -and $psrl.Version -lt [version]'2.1.0' -and -not $NoPSReadLineUpgrade) {
-        $doUpgrade = [bool]$UpgradePSReadLine
-        if (-not $doUpgrade -and (Test-Interactive)) {
-            Write-Step "PSReadLine $($psrl.Version) is installed"
-            Write-Info 'Upgrading it (for your user only) adds inline history suggestions like zsh-autosuggestions.'
-            $doUpgrade = (Read-Host '    Upgrade PSReadLine now? [Y/n]') -notmatch '^[nN]'
-        }
-        if ($doUpgrade) {
-            Write-Step 'Upgrading PSReadLine for the current user'
-            try { Update-UserPSReadLine; Write-Info 'done; it is used from the next session on' }
-            catch { Write-Warn "PSReadLine upgrade failed: $_" }
+    if (-not $NoPSReadLineUpgrade) {
+        Write-Step 'Checking PSReadLine'
+        try { Install-UserPSReadLine -Source (Join-Path $InstallDir 'modules') }
+        catch {
+            Write-Warn "could not install the bundled PSReadLine: $_"
+            Write-PSReadLineHelp
         }
     }
 
