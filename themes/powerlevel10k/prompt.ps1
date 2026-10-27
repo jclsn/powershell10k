@@ -5,6 +5,17 @@ $global:_ps10k_state = @{
     LastSuccess   = $true
     Transient     = $false
     Errors        = @{}
+    ViMode        = 'Insert'
+    LastPrompt    = $null
+    ViRedraw      = $false
+}
+
+# Collapse the prompt that is being accepted (Enter runs preexec hooks).
+Add-PS10kHook -Type preexec -Action {
+    if ($global:P10K.TransientPrompt) {
+        $global:_ps10k_state.Transient = $true
+        [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
+    }
 }
 
 function global:_ps10k_term_width {
@@ -58,7 +69,7 @@ function global:_ps10k_transient_prompt {
     $out = ''
     if ($global:P10K.EmptyLineBefore) { $out += "`n" }
     # Clear the old multi-line prompt below the cursor, then draw just the prompt char.
-    $out + "$($global:PS10K_ESC)[J" + (_ps10k_prompt_char $global:_ps10k_state.LastSuccess)
+    $out + "$($global:PS10K_ESC)[J" + (_ps10k_prompt_char $global:_ps10k_state.LastSuccess 'Insert')
 }
 
 function global:_ps10k_set_title($Context) {
@@ -80,9 +91,17 @@ function global:prompt {
             $global:_ps10k_state.Transient = $false
             return _ps10k_transient_prompt
         }
+        # vi mode switched: redraw the last prompt with the new prompt char.
+        $cached = $global:_ps10k_state.LastPrompt
+        if ($global:_ps10k_state.ViRedraw -and $cached) {
+            $global:_ps10k_state.ViRedraw = $false
+            return $cached.Head + (_ps10k_prompt_char $cached.Success)
+        }
+        $global:_ps10k_state.ViRedraw = $false
         $cfg = $global:P10K
         $ctx = _ps10k_context $ps10kSuccess $ps10kExitCode
         $global:_ps10k_state.LastSuccess = $ps10kSuccess
+        $global:_ps10k_state.ViMode = 'Insert'
         _ps10k_hooks_before_prompt $ctx
 
         $left = _ps10k_eval_segments $cfg.LeftSegments $ctx
@@ -93,6 +112,10 @@ function global:prompt {
         if ($cfg.ReportCwd -and $ctx.Location.Provider.Name -eq 'FileSystem') {
             # OSC 9;9 lets Windows Terminal open new tabs and panes in this directory.
             $text = "$($global:PS10K_ESC)]9;9;`"$($ctx.Location.ProviderPath)`"$($global:PS10K_ESC)\" + $text
+        }
+        $promptChar = _ps10k_prompt_char $ps10kSuccess 'Insert'
+        $global:_ps10k_state.LastPrompt = if ($text.EndsWith($promptChar)) {
+            @{ Head = $text.Substring(0, $text.Length - $promptChar.Length); Success = $ps10kSuccess }
         }
         $text
     }
@@ -120,19 +143,5 @@ function global:_ps10k_setup_psreadline {
     }
     catch { }
 
-    if ($cfg.TransientPrompt) {
-        Set-PSReadLineKeyHandler -Key Enter -BriefDescription 'PS10kAcceptLine' `
-            -Description 'Accept the line and collapse the prompt (powershell10k transient prompt)' -ScriptBlock {
-            $ast = $null; $tokens = $null; $parseErrors = $null; $cursor = $null
-            [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$ast, [ref]$tokens, [ref]$parseErrors, [ref]$cursor)
-            if (-not $parseErrors -or $parseErrors.Count -eq 0) {
-                $global:_ps10k_state.Transient = $true
-                [Microsoft.PowerShell.PSConsoleReadLine]::InvokePrompt()
-            }
-            [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
-        }
-    }
-    elseif ((Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -eq 'Enter' }).Function -eq 'PS10kAcceptLine') {
-        Set-PSReadLineKeyHandler -Key Enter -Function AcceptLine
-    }
+    if ($cfg.TransientPrompt) { _ps10k_bind_accept_line }
 }

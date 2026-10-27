@@ -162,10 +162,12 @@ function global:_ps10k_render_side($Segments, [switch]$Right) {
     _ps10k_render_plain $items
 }
 
-function global:_ps10k_prompt_char([bool]$Success) {
+# The prompt char points back (vi command mode) when the vi-mode plugin says so.
+function global:_ps10k_prompt_char([bool]$Success, [string]$ViMode = $global:_ps10k_state.ViMode) {
     $palette = _ps10k_palette
     $color = if ($Success) { $palette['prompt_ok'].Fg } else { $palette['prompt_error'].Fg }
-    (_ps10k_fg $color) + (_ps10k_icon 'prompt') + $global:PS10K_RESET + ' '
+    $icon = if ($ViMode -eq 'Command') { 'prompt_vicmd' } else { 'prompt' }
+    (_ps10k_fg $color) + (_ps10k_icon $icon) + $global:PS10K_RESET + ' '
 }
 
 # Assembles the full prompt string from evaluated segment results.

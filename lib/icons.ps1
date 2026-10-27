@@ -9,7 +9,7 @@ $global:PS10K_ICON_SETS = @{
         jobs = (_ps10k_u 0xF013); python = (_ps10k_u 0xE73C); node = (_ps10k_u 0xE718)
         dotnet = (_ps10k_u 0xE77F); aws = (_ps10k_u 0xF270); user = (_ps10k_u 0xF007)
         admin = (_ps10k_u 0xF0E7); remote = (_ps10k_u 0xF489)
-        prompt = (_ps10k_u 0x276F); ahead = (_ps10k_u 0x21E1); behind = (_ps10k_u 0x21E3)
+        prompt = (_ps10k_u 0x276F); prompt_vicmd = (_ps10k_u 0x276E); ahead = (_ps10k_u 0x21E1); behind = (_ps10k_u 0x21E3)
         ellipsis = (_ps10k_u 0x2026)
     }
     unicode = @{
@@ -17,7 +17,7 @@ $global:PS10K_ICON_SETS = @{
         ok = (_ps10k_u 0x2714); fail = (_ps10k_u 0x2718); time = ''; exec = ''
         jobs = (_ps10k_u 0x2699); python = ''; node = ''; dotnet = ''; aws = ''
         user = ''; admin = (_ps10k_u 0x26A1); remote = ''
-        prompt = (_ps10k_u 0x276F); ahead = (_ps10k_u 0x21E1); behind = (_ps10k_u 0x21E3)
+        prompt = (_ps10k_u 0x276F); prompt_vicmd = (_ps10k_u 0x276E); ahead = (_ps10k_u 0x21E1); behind = (_ps10k_u 0x21E3)
         ellipsis = (_ps10k_u 0x2026)
     }
     ascii = @{
@@ -25,7 +25,7 @@ $global:PS10K_ICON_SETS = @{
         ok = 'ok'; fail = 'x'; time = ''; exec = ''; jobs = '%'
         python = 'py'; node = 'node'; dotnet = '.net'; aws = 'aws'
         user = ''; admin = '#'; remote = ''
-        prompt = '>'; ahead = '>'; behind = '<'; ellipsis = '..'
+        prompt = '>'; prompt_vicmd = '<'; ahead = '>'; behind = '<'; ellipsis = '..'
     }
 }
 
