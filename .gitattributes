@@ -4,3 +4,6 @@
 *.psd1 text eol=crlf
 *.md text eol=lf
 *.ttf binary
+# Bundled third-party modules are kept byte for byte.
+modules/** -text
+*.dll binary
