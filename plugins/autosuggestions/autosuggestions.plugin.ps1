@@ -1,7 +1,7 @@
 # autosuggestions plugin: zsh-autosuggestions and history-substring-search
 # behaviour on top of PSReadLine.
 #   Up/Down      search history for lines starting with what you typed
-#   Tab          menu completion
+#   Tab          menu completion (without the full-path tooltip below it)
 #   Right/End    accept the inline suggestion (PSReadLine 2.1+)
 #   Ctrl+Right   accept the next word of the suggestion (PSReadLine 2.1+)
 # Inline suggestions need PSReadLine 2.1+. Windows PowerShell 5.1 ships 2.0;
@@ -14,6 +14,7 @@ if (Get-Module PSReadLine) {
     Set-PSReadLineKeyHandler -Key UpArrow -Function HistorySearchBackward
     Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
     Set-PSReadLineKeyHandler -Key Tab -Function MenuComplete
+    Set-PSReadLineOption -ShowToolTips:$false
     Set-PSReadLineKeyHandler -Key Shift+Tab -Function TabCompletePrevious
 
     if ($ps10kPsrl -ge [version]'2.1.0') {
