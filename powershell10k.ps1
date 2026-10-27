@@ -30,7 +30,14 @@ if (Test-Path -LiteralPath $global:PS10K_CUSTOM) {
 
 _ps10k_load_config
 
-foreach ($ps10kPlugin in @($global:PS10K_PLUGINS)) {
+# Dropping vi-mode from the list and reloading switches back to the default keys.
+if ($global:PS10K_VI_MODE -and @($global:PS10K_PLUGINS) -notcontains 'vi-mode' -and (Get-Module PSReadLine)) {
+    Set-PSReadLineOption -EditMode Windows
+    Remove-Variable -Name PS10K_VI_MODE -Scope Global -ErrorAction SilentlyContinue
+}
+# vi-mode goes first: switching PSReadLine to vi mode resets every key binding.
+$ps10kPlugins = @($global:PS10K_PLUGINS | Where-Object { $_ -eq 'vi-mode' }) + @($global:PS10K_PLUGINS | Where-Object { $_ -ne 'vi-mode' })
+foreach ($ps10kPlugin in $ps10kPlugins) {
     $ps10kPath = _ps10k_find_plugin $ps10kPlugin
     if ($ps10kPath) {
         try { . $ps10kPath }
@@ -45,4 +52,4 @@ if ($global:PS10K_THEME) {
     else { Write-Warning "powershell10k: theme '$($global:PS10K_THEME)' not found" }
 }
 
-Remove-Variable -Name ps10kFile, ps10kPlugin, ps10kPath -ErrorAction SilentlyContinue
+Remove-Variable -Name ps10kFile, ps10kPlugins, ps10kPlugin, ps10kPath -ErrorAction SilentlyContinue
