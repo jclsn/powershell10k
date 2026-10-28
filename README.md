@@ -125,7 +125,7 @@ $PS10K_SEGMENTS['hello'] = { param($ctx) @{ IconText = '*'; Text = 'hi'; Fg = 0;
 | `z` | `z proj` jumps to the most frecent match, `z -l`, `z -x`, `z -c`. |
 | `aliases` | `..`, `...`, `ll`, `la`, `take`/`mkcd`, `touch`, `which`, `grep` (if missing), `hs` (search saved history), `path`. |
 | `autosuggestions` | prefix history search on Up/Down; Tab menu completion that always cycles (in place when the menu does not fit), without the full-path tooltip. Inline suggestions only with `$PS10K_AUTOSUGGEST_INLINE = $true`, a list below the line with `$PS10K_AUTOSUGGEST_LIST = $true`. |
-| `syntax-highlighting` | live green/red command validation plus a token color palette. |
+| `syntax-highlighting` | live green/red command validation plus a token color palette. The Tab completion grid is colored too: folders in the prompt's folder color, executables (`.ps1` and `PATHEXT`) green, archives red; `$PS10K_HL_COMPLETION = $false` turns that off. |
 | `vi-mode` | vi key bindings like `bindkey -v`: <kbd>Esc</kbd> for command mode, blinking bar cursor in insert mode and block in command mode, `❯`/`❮` prompt char, <kbd>Up</kbd>/<kbd>Down</kbd> and `k`/`j` prefix history search, <kbd>Ctrl</kbd>+<kbd>r</kbd>, `v` to edit the line in `$env:EDITOR`. Cursor shapes: `$PS10K_VI_CURSOR_INSERT`/`$PS10K_VI_CURSOR_NORMAL` (DECSCUSR numbers), `$PS10K_VI_CURSOR = $false` to leave the cursor alone. The cursor and prompt char switch need PSReadLine 2.1+. |
 | `extract` | `extract file.zip` / `x file.tar.gz` |
 | `web-search` | `google`, `ddg`, `bing`, `github`, `stackoverflow`, `wiki`, `youtube` |
