@@ -54,9 +54,20 @@ function global:_ps10k_accept_line {
 }
 
 # PSReadLine runs script key handlers in the console's normal input mode, in
-# which Ctrl+c is a break signal rather than a key. Functions with their own
-# key loop, such as the completion menu, need it as a key to cancel with it.
+# which Ctrl+c is a break signal rather than a key, and mouse and resize events
+# are on. Functions with their own key loop, such as the completion menu, need
+# PSReadLine's own mode, which its internal CallUsingOurInputMode restores.
+# Without it (older PSReadLine), at least Ctrl+c is turned into a key.
 function global:_ps10k_with_ctrl_c_as_key([scriptblock]$Action) {
+    $platform = [Microsoft.PowerShell.PSConsoleReadLine].Assembly.GetType('PlatformWindows')
+    $method = if ($platform) { $platform.GetMethod('CallUsingOurInputMode', [Reflection.BindingFlags]'NonPublic, Static') }
+    if ($method) {
+        # The delegate runs synchronously on this thread, in this scope.
+        $box = @{ Result = $null; Error = $null }
+        [void]$method.Invoke($null, @([Action]{ try { $box.Result = & $Action } catch { $box.Error = $_ } }))
+        if ($box.Error) { throw $box.Error }
+        return $box.Result
+    }
     $old = $true
     try { $old = [Console]::TreatControlCAsInput; [Console]::TreatControlCAsInput = $true } catch { }
     try { & $Action }
