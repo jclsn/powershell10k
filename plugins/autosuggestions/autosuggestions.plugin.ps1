@@ -78,6 +78,8 @@ if (Get-Module PSReadLine) {
             $global:_ps10k_tab_cycle = $null
             [Microsoft.PowerShell.PSConsoleReadLine]::MenuComplete($key, $arg)
         }
+        # The completed line skipped syntax-highlighting's key handlers.
+        if (Get-Command _ps10k_hl_refresh -ErrorAction Ignore) { _ps10k_hl_refresh }
     }
     Add-PS10kHook -Type precmd -Action { $global:_ps10k_tab_cycle = $null }
 }

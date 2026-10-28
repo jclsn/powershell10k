@@ -1,9 +1,11 @@
 # syntax-highlighting plugin: zsh-syntax-highlighting for PSReadLine.
 #   - while you type, the command turns green when it exists and red when it
-#     does not (cmdlets, functions, aliases, executables and script paths)
+#     does not (cmdlets, functions, aliases, scripts and executables, by name
+#     or path: .ps1 and every extension in PATHEXT such as .exe, .bat, .cmd)
 #   - strings, variables, parameters, operators and comments get their own colors
 #   - parse errors (unclosed quotes, braces, ...) are shown in red
-# Load it after autosuggestions so history navigation is re-highlighted too.
+# Load it after autosuggestions so history navigation and completion are
+# re-highlighted too.
 
 if (-not (Get-Module PSReadLine)) { return }
 
@@ -32,15 +34,22 @@ Set-PSReadLineOption -Colors @{
 }
 Remove-Variable -Name ps10kE -ErrorAction SilentlyContinue
 
+# Get-Command also reports documents (.\notes.md opens in its app) as
+# applications; only files Windows executes count.
+function global:_ps10k_hl_executable($Command) {
+    if ($Command.CommandType -ne 'Application') { return $true }
+    $extensions = @(($env:PATHEXT -split ';') | Where-Object { $_ })
+    if (-not $extensions) { $extensions = '.com', '.exe', '.bat', '.cmd' }
+    $extensions -contains [IO.Path]::GetExtension($Command.Source)
+}
+
 function global:_ps10k_hl_command_valid([string]$Name) {
     $cache = $global:PS10K_HL.Cache
     if ($cache.ContainsKey($Name)) { return $cache[$Name] }
-    $valid = $false
-    if ($Name -match '[\\/]' -or $Name.StartsWith('.')) {
-        $valid = Test-Path -LiteralPath $Name -PathType Leaf -ErrorAction Ignore
-    }
+    # Resolves names and paths (.\build.bat, C:\tools\x.exe, .\script) alike.
     # Ignore, not SilentlyContinue: every partial word would land in $Error.
-    if (-not $valid) { $valid = [bool](Get-Command -Name $Name -ErrorAction Ignore | Select-Object -First 1) }
+    $commands = @(Get-Command -Name $Name -ErrorAction Ignore)
+    $valid = @($commands | Where-Object { _ps10k_hl_executable $_ }).Count -gt 0
     $cache[$Name] = $valid
     $valid
 }
@@ -65,6 +74,19 @@ function global:_ps10k_hl_update([string]$Line) {
     $global:PS10K_HL.Current = $color
     Set-PSReadLineOption -Colors @{ Command = $color }
     $true
+}
+
+# Recolors after keys that replace the line (history, paste, completion):
+# replacing the buffer with itself re-renders it with the new color.
+function global:_ps10k_hl_refresh {
+    try {
+        $b = _ps10k_hl_buffer
+        if (_ps10k_hl_update $b.Line) {
+            [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $b.Line.Length, $b.Line)
+            [Microsoft.PowerShell.PSConsoleReadLine]::SetCursorPosition($b.Cursor)
+        }
+    }
+    catch { }
 }
 
 function global:_ps10k_hl_buffer {
@@ -108,23 +130,18 @@ Set-PSReadLineKeyHandler -Key Delete -BriefDescription 'PS10kHighlightDelete' -S
     [Microsoft.PowerShell.PSConsoleReadLine]::DeleteChar($key, $arg)
 }
 
-# Keys that replace the whole line (history, paste): run the bound function,
-# then re-render with the right color by replacing the buffer with itself.
-foreach ($ps10kKey in 'UpArrow', 'DownArrow', 'Ctrl+v') {
+# Keys that replace the whole line (history, paste, completion): run the
+# bound function, then recolor.
+# powershell10k's own handlers (PS10k*, such as the autosuggestions Tab) call
+# _ps10k_hl_refresh themselves.
+foreach ($ps10kKey in 'UpArrow', 'DownArrow', 'Ctrl+v', 'Tab', 'Shift+Tab') {
     $ps10kBound = Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -eq $ps10kKey } | Select-Object -First 1
     if (-not $ps10kBound -or $ps10kBound.Function -like 'PS10k*') { continue }
     $ps10kFunction = $ps10kBound.Function
     $ps10kHandler = [scriptblock]::Create(@"
 param(`$key, `$arg)
 [Microsoft.PowerShell.PSConsoleReadLine]::$ps10kFunction(`$key, `$arg)
-try {
-    `$b = _ps10k_hl_buffer
-    if (_ps10k_hl_update `$b.Line) {
-        [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, `$b.Line.Length, `$b.Line)
-        [Microsoft.PowerShell.PSConsoleReadLine]::SetCursorPosition(`$b.Cursor)
-    }
-}
-catch { }
+_ps10k_hl_refresh
 "@)
     Set-PSReadLineKeyHandler -Chord $ps10kKey -BriefDescription "PS10k$ps10kFunction" -ScriptBlock $ps10kHandler
 }
