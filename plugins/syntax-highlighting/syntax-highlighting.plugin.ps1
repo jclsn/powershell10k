@@ -17,12 +17,14 @@ $global:PS10K_HL = @{
 }
 
 $ps10kE = [char]27
+# Default and String use the terminal's own colors (default foreground and the
+# scheme's magenta/purple), so they follow the Windows Terminal color scheme.
 Set-PSReadLineOption -Colors @{
     Command   = $global:PS10K_HL.Valid
     Parameter = "$ps10kE[38;5;117m"
     Operator  = "$ps10kE[38;5;250m"
     Variable  = "$ps10kE[38;5;81m"
-    String    = "$ps10kE[38;5;179m"
+    String    = "$ps10kE[35m"
     Number    = "$ps10kE[38;5;141m"
     Type      = "$ps10kE[38;5;37m"
     Comment   = "$ps10kE[38;5;244m"
@@ -30,7 +32,7 @@ Set-PSReadLineOption -Colors @{
     Member    = "$ps10kE[38;5;117m"
     Error     = "$ps10kE[38;5;196m"
     Emphasis  = "$ps10kE[38;5;214m"
-    Default   = "$ps10kE[38;5;252m"
+    Default   = "$ps10kE[39m"
 }
 Remove-Variable -Name ps10kE -ErrorAction SilentlyContinue
 
