@@ -60,37 +60,85 @@ function global:_ps10k_grid_shift($Rl, [int]$Lines) {
 # Column-major layout like zsh: each column is as wide as its longest entry,
 # and names longer than a third of the window are cut, so one long name does
 # not force everything into a single column. Tries the most columns first.
-function global:_ps10k_grid_layout([string[]]$Items, [int]$Width) {
+# Plain loops: this runs on every Tab, and pipelines are slow in PowerShell.
+function global:_ps10k_grid_layout([string[]]$Items, [int]$Width, [int[]]$Widths) {
+    if (-not $Widths) { $Widths = @(foreach ($item in $Items) { _ps10k_width $item }) }
     $cap = [Math]::Max(16, [Math]::Floor($Width / 3))
-    $widths = @($Items | ForEach-Object { [Math]::Min((_ps10k_width $_), $cap) })
-    $count = $widths.Count
-    $narrowest = ($widths | Measure-Object -Minimum).Minimum
+    $count = $Widths.Count
+    $capped = New-Object int[] $count
+    $narrowest = [int]::MaxValue
+    for ($i = 0; $i -lt $count; $i++) {
+        $w = [Math]::Min($Widths[$i], $cap)
+        $capped[$i] = $w
+        if ($w -lt $narrowest) { $narrowest = $w }
+    }
     $tryColumns = [Math]::Max(1, [Math]::Min($count, [Math]::Floor($Width / ($narrowest + 2))))
     for ($columns = $tryColumns; $columns -ge 1; $columns--) {
         $rows = [int][Math]::Ceiling($count / $columns)
         $used = [int][Math]::Ceiling($count / $rows)
-        $columnWidths = @(for ($c = 0; $c -lt $used; $c++) {
-            $slice = $widths[($c * $rows)..([Math]::Min($count, ($c + 1) * $rows) - 1)]
-            [int](($slice | Measure-Object -Maximum).Maximum + 2)
-        })
-        if (($columnWidths | Measure-Object -Sum).Sum -le $Width -or $columns -eq 1) {
-            $columnWidths = @($columnWidths | ForEach-Object { [Math]::Min($_, $Width) })
-            return @{
-                Columns = $used; Rows = $rows; ColumnWidths = $columnWidths
-                ColumnWidth = [int](($columnWidths | Measure-Object -Maximum).Maximum)
-            }
+        $columnWidths = New-Object int[] $used
+        $sum = 0; $widest = 0
+        for ($c = 0; $c -lt $used; $c++) {
+            $max = 0
+            $end = [Math]::Min($count, ($c + 1) * $rows)
+            for ($i = $c * $rows; $i -lt $end; $i++) { if ($capped[$i] -gt $max) { $max = $capped[$i] } }
+            $columnWidths[$c] = [Math]::Min($max + 2, $Width)
+            $sum += $columnWidths[$c]
+            if ($columnWidths[$c] -gt $widest) { $widest = $columnWidths[$c] }
+            if ($sum -gt $Width -and $columns -gt 1) { break }
+        }
+        if ($sum -le $Width -or $columns -eq 1) {
+            return @{ Columns = $used; Rows = $rows; ColumnWidths = $columnWidths; ColumnWidth = $widest }
         }
     }
 }
 
 # One cell: the name padded (or cut) to the column, colored or selected.
-function global:_ps10k_grid_cell([string]$Text, [string]$Color, [bool]$Selected, [int]$ColumnWidth) {
+# $TextWidth saves measuring the name again when it is already known.
+function global:_ps10k_grid_cell([string]$Text, [string]$Color, [bool]$Selected, [int]$ColumnWidth, [int]$TextWidth = -1) {
     $cell = $ColumnWidth - 1
-    if ((_ps10k_width $Text) -gt $cell) { $Text = $Text.Substring(0, [Math]::Max(0, $cell - 3)) + '...' }
-    $padding = ' ' * [Math]::Max(0, $cell - (_ps10k_width $Text))
+    if ($TextWidth -lt 0) { $TextWidth = _ps10k_width $Text }
+    if ($TextWidth -gt $cell) {
+        $Text = $Text.Substring(0, [Math]::Max(0, [Math]::Min($Text.Length, $cell - 3))) + '...'
+        $TextWidth = _ps10k_width $Text
+    }
+    $padding = ' ' * [Math]::Max(0, $cell - $TextWidth)
     if ($Selected) { return $global:PS10K_GRID.Selected + $Text + $global:PS10K_GRID.Unselect + $padding + ' ' }
     if ($Color) { return $Color + $Text + "$([char]27)[39m" + $padding + ' ' }
     $Text + $padding + ' '
+}
+
+# Builds every entry's cell once, so moving the selection only joins strings.
+# The selected look of a cell is built the first time it is selected.
+function global:_ps10k_grid_prepare($Grid) {
+    $count = $Grid.Items.Count
+    $Grid.Normal = New-Object string[] $count
+    $Grid.Picked = New-Object string[] $count
+    $rows = $Grid.Layout.Rows; $columnWidths = $Grid.Layout.ColumnWidths; $widths = $Grid.Widths
+    for ($i = 0; $i -lt $count; $i++) {
+        $textWidth = if ($widths) { $widths[$i] } else { -1 }
+        $Grid.Normal[$i] = _ps10k_grid_cell $Grid.Items[$i] $Grid.Colors[$i] $false $columnWidths[[Math]::Floor($i / $rows)] $textWidth
+    }
+}
+
+function global:_ps10k_grid_column_width($Grid, [int]$Index) { $Grid.Layout.ColumnWidths[[Math]::Floor($Index / $Grid.Layout.Rows)] }
+function global:_ps10k_grid_text_width($Grid, [int]$Index) { if ($Grid.Widths) { $Grid.Widths[$Index] } else { -1 } }
+
+# Text of one grid row.
+function global:_ps10k_grid_row($Grid, [int]$Row) {
+    if (-not $Grid.Normal) { _ps10k_grid_prepare $Grid }
+    $rows = $Grid.Layout.Rows
+    $count = $Grid.Items.Count
+    $parts = New-Object 'System.Collections.Generic.List[string]'
+    $parts.Add("$([char]27)[0m")
+    for ($index = $Row; $index -lt $count; $index += $rows) {
+        if ($index -ne $Grid.Selected) { $parts.Add($Grid.Normal[$index]); continue }
+        if (-not $Grid.Picked[$index]) {
+            $Grid.Picked[$index] = _ps10k_grid_cell $Grid.Items[$index] $Grid.Colors[$index] $true (_ps10k_grid_column_width $Grid $index) (_ps10k_grid_text_width $Grid $index)
+        }
+        $parts.Add($Grid.Picked[$index])
+    }
+    [string]::Concat($parts)
 }
 
 # How many grid rows fit below the command line. A grid taller than that
@@ -119,13 +167,7 @@ function global:_ps10k_grid_lines($Grid) {
     $visible = if ($Grid.Visible) { $Grid.Visible } else { $Grid.Layout.Rows }
     $offset = if ($Grid.Offset) { $Grid.Offset } else { 0 }
     for ($row = $offset; $row -lt [Math]::Min($Grid.Layout.Rows, $offset + $visible); $row++) {
-        $line = "$esc[0m"
-        for ($column = 0; $column -lt $Grid.Layout.Columns; $column++) {
-            $index = $column * $Grid.Layout.Rows + $row
-            if ($index -ge $Grid.Items.Count) { break }
-            $line += _ps10k_grid_cell $Grid.Items[$index] $Grid.Colors[$index] ($index -eq $Grid.Selected) $Grid.Layout.ColumnWidths[$column]
-        }
-        $line
+        _ps10k_grid_row $Grid $row
     }
     if ($Grid.Paged) {
         # The scheme's bright black, like comments.
@@ -164,6 +206,21 @@ function global:_ps10k_grid_draw($Grid) {
     [Console]::SetCursorPosition($left, $top)
 }
 
+# Redraws only the given grid rows (the old and the new selection) when the
+# grid did not move; otherwise draws it all.
+function global:_ps10k_grid_draw_rows($Grid, [int[]]$Rows, [int]$PreviousOffset) {
+    $first = (_ps10k_grid_end_row $Grid.Rl) + 1
+    if ($null -eq $Grid.Top -or $first -ne $Grid.Top -or $Grid.Offset -ne $PreviousOffset) { return (_ps10k_grid_draw $Grid) }
+    $esc = [char]27
+    $left = [Console]::CursorLeft; $top = [Console]::CursorTop
+    foreach ($row in ($Rows | Select-Object -Unique)) {
+        if ($row -lt $Grid.Offset -or $row -ge $Grid.Offset + $Grid.Visible) { continue }
+        [Console]::SetCursorPosition(0, $Grid.Top + $row - $Grid.Offset)
+        [Console]::Write((_ps10k_grid_row $Grid $row) + "$esc[K")
+    }
+    [Console]::SetCursorPosition($left, $top)
+}
+
 function global:_ps10k_grid_clear($Grid) {
     if ($null -eq $Grid.Top) { return }
     $esc = [char]27
@@ -186,14 +243,28 @@ function global:_ps10k_grid_apply($Grid, [string]$Text) {
     $Grid.Length = $Text.Length
 }
 
-# Colors per entry: folders, executables and archives (syntax-highlighting).
+# Colors per entry: folders, executables and archives, the same rules as
+# syntax-highlighting's _ps10k_hl_completion_color, with the extension lists
+# turned into sets once instead of once per entry.
 function global:_ps10k_grid_colors($Results, [string[]]$Items) {
-    if (-not (Get-Command _ps10k_hl_completion_color -ErrorAction Ignore)) { return @($Items | ForEach-Object { $null }) }
+    $colors = New-Object string[] $Results.Count
+    if (-not (Get-Command _ps10k_hl_folder_color -ErrorAction Ignore)) { return , $colors }
     $folderColor = _ps10k_hl_folder_color
+    $ignoreCase = [StringComparer]::OrdinalIgnoreCase
+    $executables = New-Object 'System.Collections.Generic.HashSet[string]' $ignoreCase
+    foreach ($extension in @(($env:PATHEXT -split ';') + '.ps1')) { if ($extension) { [void]$executables.Add($extension) } }
+    $archives = New-Object 'System.Collections.Generic.HashSet[string]' $ignoreCase
+    foreach ($extension in $global:PS10K_HL.Archives) { [void]$archives.Add($extension) }
     for ($i = 0; $i -lt $Results.Count; $i++) {
-        $plain = New-Object System.Management.Automation.CompletionResult($Results[$i].CompletionText, $Items[$i], $Results[$i].ResultType, $Items[$i])
-        _ps10k_hl_completion_color $plain $folderColor
+        $type = $Results[$i].ResultType
+        if ($type -eq 'ProviderContainer') { $colors[$i] = $folderColor; continue }
+        if ($type -ne 'ProviderItem') { continue }
+        $extension = try { [IO.Path]::GetExtension($Items[$i]) } catch { '' }
+        if (-not $extension) { continue }
+        if ($executables.Contains($extension)) { $colors[$i] = $global:PS10K_HL.Valid }
+        elseif ($archives.Contains($extension)) { $colors[$i] = $global:PS10K_HL.Invalid }
     }
+    , $colors
 }
 
 # Like zsh, a folder is completed with its separator ('Workspace\'), so the
@@ -222,20 +293,38 @@ function global:_ps10k_grid_separator([string]$Word) {
 function global:_ps10k_grid_complete([string]$Line, [int]$Cursor, [bool]$Backward) {
     $rl = _ps10k_grid_internals
     if (-not $rl) { return 'menu' }
-    $completion = TabExpansion2 -inputScript $Line -cursorColumn $Cursor
+    # The unwrapped completion: the grid colors entries itself, so the
+    # syntax-highlighting wrapper's colored names would only be stripped again.
+    $completion = if ($global:_ps10k_tabexpansion2) {
+        & $global:_ps10k_tabexpansion2 -inputScript $Line -cursorColumn $Cursor
+    }
+    else { TabExpansion2 -inputScript $Line -cursorColumn $Cursor }
     $results = @($completion.CompletionMatches)
     if ($results.Count -eq 0) { [Microsoft.PowerShell.PSConsoleReadLine]::Ding(); return 'done' }
     $start = $completion.ReplacementIndex; $length = $completion.ReplacementLength
     $original = $Line.Substring($start, $length)
     $separator = _ps10k_grid_separator $original
-    $texts = @($results | ForEach-Object { _ps10k_grid_text $_ $separator })
     if ($results.Count -eq 1) {
-        [Microsoft.PowerShell.PSConsoleReadLine]::Replace($start, $length, $texts[0])
+        [Microsoft.PowerShell.PSConsoleReadLine]::Replace($start, $length, (_ps10k_grid_text $results[0] $separator))
         return 'done'
     }
+    # Inline fast paths: function calls cost more than the work for most entries.
+    $texts = @(foreach ($r in $results) {
+        $text = $r.CompletionText
+        if ($r.ResultType -ne 'ProviderContainer' -or -not $text -or $text.EndsWith('\') -or $text.EndsWith('/')) { $text }
+        elseif ($text.EndsWith("'") -or $text.EndsWith('"')) { _ps10k_grid_text $r $separator }
+        else { $text + $separator }
+    })
 
-    $items = @($results | ForEach-Object { _ps10k_strip_ansi $_.ListItemText })
-    $layout = _ps10k_grid_layout $items ([Console]::BufferWidth)
+    $esc = [char]27
+    $items = @(foreach ($r in $results) {
+        $name = $r.ListItemText
+        if ($name.IndexOf($esc) -ge 0) { _ps10k_strip_ansi $name } else { $name }
+    })
+    $widths = [int[]]@(foreach ($item in $items) {
+        if ($item -cmatch '^[\x20-\x7E]*$') { $item.Length } else { _ps10k_width $item }
+    })
+    $layout = _ps10k_grid_layout $items ([Console]::BufferWidth) $widths
     $promptTop = [int]$rl.InitialY.GetValue($rl.Singleton) - [int](Get-PSReadLineOption).ExtraPromptLineCount
     $inputRows = (_ps10k_grid_end_row $rl) - $promptTop + 1
     # One spare row: the command line can wrap while the grid is open.
@@ -244,11 +333,12 @@ function global:_ps10k_grid_complete([string]$Line, [int]$Cursor, [bool]$Backwar
 
     $count = $results.Count
     $grid = @{
-        Rl = $rl; Items = $items; Colors = @(_ps10k_grid_colors $results $items); Layout = $layout
+        Rl = $rl; Items = $items; Widths = $widths; Colors = (_ps10k_grid_colors $results $items); Layout = $layout
         Top = $null; Height = 0
         Start = $start; Length = $length; Original = $original
         Selected = $(if ($Backward) { $count - 1 } else { 0 })
     }
+    _ps10k_grid_prepare $grid
     _ps10k_grid_viewport $grid $available
     try {
         _ps10k_grid_apply $grid $texts[$grid.Selected]
@@ -288,10 +378,12 @@ function global:_ps10k_grid_complete([string]$Line, [int]$Cursor, [bool]$Backwar
                 }
             }
             if ($next -ne $grid.Selected) {
+                $previousRow = $grid.Selected % $layout.Rows
+                $previousOffset = $grid.Offset
                 $grid.Selected = $next
                 _ps10k_grid_scroll_to $grid
                 _ps10k_grid_apply $grid $texts[$next]
-                _ps10k_grid_draw $grid
+                _ps10k_grid_draw_rows $grid @($previousRow, ($next % $layout.Rows)) $previousOffset
             }
         }
     }
