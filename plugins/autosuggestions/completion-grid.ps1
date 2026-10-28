@@ -17,36 +17,11 @@ $global:PS10K_GRID = @{
     Unselect = "$([char]27)[27m"
 }
 
-# Reflection handles for the PSReadLine internals the grid needs, or $null.
-function global:_ps10k_grid_internals {
-    if ($global:_ps10k_grid_rl) { return $global:_ps10k_grid_rl }
-    try {
-        $type = [Microsoft.PowerShell.PSConsoleReadLine]
-        $flags = [Reflection.BindingFlags]'NonPublic, Instance'
-        $singleton = $type.GetField('_singleton', [Reflection.BindingFlags]'NonPublic, Static').GetValue($null)
-        $rl = @{
-            Singleton      = $singleton
-            InitialY       = $type.GetField('_initialY', $flags)
-            PreviousRender = $type.GetField('_previousRender', $flags)
-            EndOfBuffer    = $type.GetMethod('EndOfBufferPosition', $flags)
-        }
-        if (-not ($singleton -and $rl.InitialY -and $rl.PreviousRender -and $rl.EndOfBuffer)) { return $null }
-        $render = $rl.PreviousRender.GetValue($singleton)
-        if (-not $render) { return $null }
-        $rl.RenderInitialY = $render.GetType().GetField('initialY')
-        $rl.RenderCursorTop = $render.GetType().GetField('cursorTop')
-        if (-not ($rl.RenderInitialY -and $rl.RenderCursorTop)) { return $null }
-        $global:_ps10k_grid_rl = $rl
-        $rl
-    }
-    catch { $null }
-}
+# The PSReadLine internals the grid needs (lib/readline.ps1), or $null.
+function global:_ps10k_grid_internals { _ps10k_rl_internals }
 
 # Row on which the command line ends.
-function global:_ps10k_grid_end_row($Rl) {
-    $point = $Rl.EndOfBuffer.Invoke($Rl.Singleton, @())
-    [int]$point.GetType().GetField('Y').GetValue($point)
-}
+function global:_ps10k_grid_end_row($Rl) { (_ps10k_rl_end_point $Rl).Y }
 
 # After the screen scrolled up by $Lines, tells PSReadLine where its input is
 # now (PSReadLine's own menu adjusts the same fields).
@@ -234,13 +209,15 @@ function global:_ps10k_grid_clear($Grid) {
 
 # Puts a completion on the command line, rendered like typed text.
 function global:_ps10k_grid_apply($Grid, [string]$Text) {
-    if (Get-Command _ps10k_hl_update -ErrorAction Ignore) {
-        $line = $null; $cursor = $null
-        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+    $line = $null; $cursor = $null
+    [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+    $highlight = [bool](Get-Command _ps10k_hl_update -ErrorAction Ignore)
+    if ($highlight) {
         try { [void](_ps10k_hl_update ($line.Remove($Grid.Start, $Grid.Length).Insert($Grid.Start, $Text))) } catch { }
     }
     [Microsoft.PowerShell.PSConsoleReadLine]::Replace($Grid.Start, $Grid.Length, $Text)
     $Grid.Length = $Text.Length
+    if ($highlight) { _ps10k_hl_clear_padding $line }
 }
 
 # Colors per entry: folders, executables and archives, the same rules as
