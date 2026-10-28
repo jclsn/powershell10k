@@ -208,6 +208,29 @@ Test-Case 'completion runs with Ctrl+c as a key and restores the console mode' {
     Assert-Equal 'PS10kTabComplete' $tab.Function
 }
 
+Test-Case 'completion grid colors folders, executables and archives' {
+    $dir = Join-Path $work 'grid'
+    New-Item -ItemType Directory -Path (Join-Path $dir 'folder') -Force | Out-Null
+    foreach ($name in 'tool.exe', 'run.ps1', 'pack.zip', 'notes.txt') { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
+    Push-Location $dir
+    try {
+        $line = 'Get-ChildItem .\'
+        $completion = TabExpansion2 -inputScript $line -cursorColumn $line.Length
+        $byText = @{}
+        foreach ($r in $completion.CompletionMatches) { $byText[(_ps10k_strip_ansi $r.ListItemText)] = $r }
+        $esc = [char]27
+        Assert-True $byText['folder'].ListItemText.StartsWith((_ps10k_hl_folder_color)) 'folder color'
+        Assert-True $byText['tool.exe'].ListItemText.StartsWith($global:PS10K_HL.Valid) 'executable green'
+        Assert-True $byText['run.ps1'].ListItemText.StartsWith($global:PS10K_HL.Valid) 'script green'
+        Assert-True $byText['pack.zip'].ListItemText.StartsWith($global:PS10K_HL.Invalid) 'archive red'
+        Assert-Equal 'notes.txt' $byText['notes.txt'].ListItemText 'plain files stay uncolored'
+        Assert-True $byText['tool.exe'].ListItemText.EndsWith("$esc[39m") 'only the foreground is reset'
+        Assert-Equal '.\tool.exe' $byText['tool.exe'].CompletionText 'the inserted text has no colors'
+        Assert-Equal 8 (_ps10k_width $byText['tool.exe'].ListItemText) 'width ignores the colors'
+    }
+    finally { Pop-Location }
+}
+
 Test-Case 'highlighting lookups do not fill $Error' {
     $before = $global:Error.Count
     [void](_ps10k_hl_line_valid '.\no-such-script-ps10k')
