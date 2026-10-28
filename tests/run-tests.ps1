@@ -178,6 +178,25 @@ Test-Case 'Tab falls back to in-place cycling when the menu cannot fit' {
     Assert-Equal 'PS10kTabComplete' $tab.Function
 }
 
+Test-Case 'highlighting accepts scripts and executables, not documents' {
+    $dir = Join-Path $work 'exec'
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    foreach ($name in 'run.ps1', 'build.bat', 'build.cmd', 'tool.exe', 'notes.md') {
+        Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x'
+    }
+    Push-Location $dir
+    try {
+        $global:PS10K_HL.Cache = @{}
+        foreach ($line in '.\run.ps1', '.\run', '& .\build.bat -x', '.\build.cmd', '.\tool.exe', "$dir\build.bat", 'whoami') {
+            Assert-True (_ps10k_hl_line_valid $line) "$line should be valid"
+        }
+        foreach ($line in '.\notes.md', '.\missing.bat', 'run.ps1') {
+            Assert-True (-not (_ps10k_hl_line_valid $line)) "$line should be invalid"
+        }
+    }
+    finally { Pop-Location }
+}
+
 Test-Case 'highlighting lookups do not fill $Error' {
     $before = $global:Error.Count
     [void](_ps10k_hl_line_valid '.\no-such-script-ps10k')
