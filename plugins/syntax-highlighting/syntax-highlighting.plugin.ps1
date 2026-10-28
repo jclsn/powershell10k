@@ -4,6 +4,8 @@
 #     or path: .ps1 and every extension in PATHEXT such as .exe, .bat, .cmd)
 #   - strings, variables, parameters, operators and comments get their own colors
 #   - parse errors (unclosed quotes, braces, ...) are shown in red
+#   - arguments are underlined while they are existing paths or the start of
+#     one (ls Wo, ls Workspace\Docker\), like zsh's path highlighting
 # Load it after autosuggestions so history navigation and completion are
 # re-highlighted too.
 
@@ -13,29 +15,33 @@ $global:PS10K_HL = @{
     # The color scheme's green and red, so they follow the terminal theme.
     Valid   = "$([char]27)[32m"
     Invalid = "$([char]27)[31m"
+    # Default and String use the terminal's own colors (default foreground,
+    # the scheme's magenta/purple), so they follow the color scheme.
+    Default = "$([char]27)[39m"
+    String  = "$([char]27)[35m"
     Current = $null
     Cache   = @{}
 }
 
 $ps10kE = [char]27
-# Default, String and Selection use the terminal's own colors (default
-# foreground, the scheme's magenta/purple, reverse video), so they follow the
-# Windows Terminal color scheme. Selection is the completion menu highlight:
-# terminal foreground as background, terminal background as text.
+# PSReadLine colors whitespace with a plain color reset that leaves underline
+# on, so every color but the underlined ones starts with "underline off".
+# Selection is the menu highlight: terminal foreground as background,
+# terminal background as text.
 Set-PSReadLineOption -Colors @{
-    Command   = $global:PS10K_HL.Valid
-    Parameter = "$ps10kE[38;5;117m"
-    Operator  = "$ps10kE[38;5;250m"
-    Variable  = "$ps10kE[38;5;81m"
-    String    = "$ps10kE[35m"
-    Number    = "$ps10kE[38;5;141m"
-    Type      = "$ps10kE[38;5;37m"
-    Comment   = "$ps10kE[38;5;244m"
-    Keyword   = "$ps10kE[38;5;170m"
-    Member    = "$ps10kE[38;5;117m"
-    Error     = "$ps10kE[38;5;196m"
-    Emphasis  = "$ps10kE[38;5;214m"
-    Default   = "$ps10kE[39m"
+    Command   = "$ps10kE[24m" + $global:PS10K_HL.Valid
+    Parameter = "$ps10kE[24;38;5;117m"
+    Operator  = "$ps10kE[24;38;5;250m"
+    Variable  = "$ps10kE[24;38;5;81m"
+    String    = "$ps10kE[24m" + $global:PS10K_HL.String
+    Number    = "$ps10kE[24;38;5;141m"
+    Type      = "$ps10kE[24;38;5;37m"
+    Comment   = "$ps10kE[24;38;5;244m"
+    Keyword   = "$ps10kE[24;38;5;170m"
+    Member    = "$ps10kE[24;38;5;117m"
+    Error     = "$ps10kE[24;38;5;196m"
+    Emphasis  = "$ps10kE[24;38;5;214m"
+    Default   = "$ps10kE[24m" + $global:PS10K_HL.Default
     Selection = "$ps10kE[7m"
 }
 Remove-Variable -Name ps10kE -ErrorAction SilentlyContinue
@@ -61,24 +67,79 @@ function global:_ps10k_hl_command_valid([string]$Name) {
 }
 
 # True when every command name in $Line resolves.
-function global:_ps10k_hl_line_valid([string]$Line) {
-    if (-not $Line -or -not $Line.Trim()) { return $true }
-    $tokens = $null; $errors = $null
-    $ast = [System.Management.Automation.Language.Parser]::ParseInput($Line, [ref]$tokens, [ref]$errors)
-    $commands = $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)
-    foreach ($command in $commands) {
-        $name = $command.GetCommandName()
-        if ($name -and -not (_ps10k_hl_command_valid $name)) { return $false }
+function global:_ps10k_hl_line_valid([string]$Line) { (_ps10k_hl_analyze $Line).Valid }
+
+# True when $Value is an existing file or folder, or the start of the name of
+# one (Wo for Workspace). A trailing separator needs an existing folder.
+function global:_ps10k_hl_path_like([string]$Value) {
+    if (-not $Value -or $Value.IndexOfAny([char[]]'*?') -ge 0) { return $false }
+    $location = $executionContext.SessionState.Path.CurrentLocation
+    $key = "path:$($location.Path)|$Value"
+    $cache = $global:PS10K_HL.Cache
+    if ($cache.ContainsKey($key)) { return $cache[$key] }
+    $result = $false
+    try {
+        $full = $executionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Value)
+        if ($Value.EndsWith('\') -or $Value.EndsWith('/')) { $result = [IO.Directory]::Exists($full) }
+        elseif ([IO.File]::Exists($full) -or [IO.Directory]::Exists($full)) { $result = $true }
+        else {
+            $parent = [IO.Path]::GetDirectoryName($full)
+            $leaf = [IO.Path]::GetFileName($full)
+            if ($parent -and $leaf -and [IO.Directory]::Exists($parent)) {
+                $result = [IO.Directory]::EnumerateFileSystemEntries($parent, "$leaf*").GetEnumerator().MoveNext()
+            }
+        }
     }
-    $true
+    catch { $result = $false }
+    $cache[$key] = $result
+    $result
 }
 
-# Sets the Command color for $Line; returns $true when it changed.
+# Whether the line's commands resolve, and whether all its plain (Bare) and
+# quoted (Quoted) arguments are paths. PSReadLine has one color per token
+# kind, not per word, so plain arguments are underlined together, and only
+# when all of them are paths: nothing is ever underlined that is not a path.
+function global:_ps10k_hl_analyze([string]$Line) {
+    $state = @{ Valid = $true; Bare = $false; Quoted = $false }
+    if (-not $Line -or -not $Line.Trim()) { return $state }
+    $tokens = $null; $errors = $null
+    $ast = [System.Management.Automation.Language.Parser]::ParseInput($Line, [ref]$tokens, [ref]$errors)
+    $bare = New-Object System.Collections.ArrayList
+    $quoted = New-Object System.Collections.ArrayList
+    foreach ($command in $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+        $name = $command.GetCommandName()
+        if ($name -and -not (_ps10k_hl_command_valid $name)) { $state.Valid = $false }
+        foreach ($element in @($command.CommandElements | Select-Object -Skip 1)) {
+            if ($element -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) { continue }
+            if ($element.StringConstantType -eq 'BareWord') { [void]$bare.Add($element.Value) }
+            else { [void]$quoted.Add($element.Value) }
+        }
+    }
+    $state.Bare = $bare.Count -gt 0 -and @($bare | Where-Object { -not (_ps10k_hl_path_like $_) }).Count -eq 0
+    $state.Quoted = $quoted.Count -gt 0 -and @($quoted | Where-Object { -not (_ps10k_hl_path_like $_) }).Count -eq 0
+    $state
+}
+
+# Sets the Command, Default and String colors for $Line; returns $true when
+# they changed.
 function global:_ps10k_hl_update([string]$Line) {
-    $color = if (_ps10k_hl_line_valid $Line) { $global:PS10K_HL.Valid } else { $global:PS10K_HL.Invalid }
-    if ($color -eq $global:PS10K_HL.Current) { return $false }
-    $global:PS10K_HL.Current = $color
-    Set-PSReadLineOption -Colors @{ Command = $color }
+    $state = _ps10k_hl_analyze $Line
+    _ps10k_hl_apply $state.Valid $state.Bare $state.Quoted
+}
+
+function global:_ps10k_hl_apply([bool]$Valid, [bool]$Bare, [bool]$Quoted) {
+    $hl = $global:PS10K_HL
+    $command = if ($Valid) { $hl.Valid } else { $hl.Invalid }
+    $key = "$command|$Bare|$Quoted"
+    $hl.LastValid = $Valid
+    if ($key -eq $hl.Current) { return $false }
+    $hl.Current = $key
+    $esc = [char]27
+    Set-PSReadLineOption -Colors @{
+        Command = "$esc[24m" + $command
+        Default = $(if ($Bare) { "$esc[4m" } else { "$esc[24m" }) + $hl.Default
+        String  = $(if ($Quoted) { "$esc[4m" } else { "$esc[24m" }) + $hl.String
+    }
     $true
 }
 
@@ -245,5 +306,9 @@ Add-PS10kHook -Type precmd -Action {
     $global:PS10K_HL.Cache = @{}
     [void](_ps10k_hl_update '')
 }
+# Enter renders the line once more before running it: without the underline,
+# so it cannot carry over into the command's output.
+Add-PS10kHook -Type preexec -Action { [void](_ps10k_hl_apply ([bool]$global:PS10K_HL.LastValid) $false $false) }
+_ps10k_bind_accept_line
 
 Remove-Variable -Name ps10kChars, ps10kChar, ps10kKey, ps10kBound, ps10kFunction, ps10kHandler -ErrorAction SilentlyContinue
