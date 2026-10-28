@@ -326,6 +326,11 @@ Test-Case 'existing paths and their beginnings are underlined' {
         _ps10k_run_hooks -Type preexec
         Assert-Equal "$esc[24m$esc[39m" (Get-PSReadLineOption).DefaultTokenColor 'no underline when the command runs'
         Assert-True (Get-PSReadLineOption).ParameterColor.StartsWith("$esc[24") 'other colors switch underline off'
+        [void](_ps10k_hl_update 'ls Wo')
+        Assert-True $global:PS10K_HL.Underlined
+        _ps10k_hl_clear_padding 'ls Workspace\Docker\'
+        [void](_ps10k_hl_update 'ls Wox')
+        Assert-True (-not $global:PS10K_HL.Underlined)
     }
     finally { Pop-Location; [void](_ps10k_hl_update '') }
 }
