@@ -296,6 +296,37 @@ Test-Case 'completion grid scrolls when it is taller than the window' {
     Assert-Equal 1 @(_ps10k_grid_lines $small).Count
 }
 
+Test-Case 'existing paths and their beginnings are underlined' {
+    $dir = Join-Path $work 'paths'
+    New-Item -ItemType Directory -Path (Join-Path $dir 'Workspace\Docker') -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $dir 'notes.txt') -Value 'x'
+    Push-Location $dir
+    try {
+        $global:PS10K_HL.Cache = @{}
+        foreach ($value in 'Wo', 'Workspace', 'Workspace\', 'Workspace\Docker\', 'Workspace/Do', '.\notes.txt', 'note', "$dir\Workspace") {
+            Assert-True (_ps10k_hl_path_like $value) "$value should count as a path"
+        }
+        foreach ($value in 'Wox', 'notes.txt\', 'Workspace\Nope', 'W*', '') {
+            Assert-True (-not (_ps10k_hl_path_like $value)) "$value should not count as a path"
+        }
+        Assert-True (_ps10k_hl_analyze 'ls Workspace\Docker\').Bare
+        Assert-True (-not (_ps10k_hl_analyze 'ls Wox').Bare)
+        Assert-True (-not (_ps10k_hl_analyze 'cp Workspace nope').Bare) 'not all arguments are paths'
+        Assert-True (_ps10k_hl_analyze "ls 'Workspace'").Quoted
+        Assert-True (-not (_ps10k_hl_analyze 'ls -Force').Bare) 'parameters are not arguments'
+        $esc = [char]27
+        [void](_ps10k_hl_update 'ls Wo')
+        Assert-Equal "$esc[4m$esc[39m" (Get-PSReadLineOption).DefaultTokenColor 'underlined'
+        [void](_ps10k_hl_update 'ls Wox')
+        Assert-Equal "$esc[24m$esc[39m" (Get-PSReadLineOption).DefaultTokenColor 'not underlined'
+        [void](_ps10k_hl_update 'ls Wo')
+        _ps10k_run_hooks -Type preexec
+        Assert-Equal "$esc[24m$esc[39m" (Get-PSReadLineOption).DefaultTokenColor 'no underline when the command runs'
+        Assert-True (Get-PSReadLineOption).ParameterColor.StartsWith("$esc[24") 'other colors switch underline off'
+    }
+    finally { Pop-Location; [void](_ps10k_hl_update '') }
+}
+
 Test-Case 'highlighting lookups do not fill $Error' {
     $before = $global:Error.Count
     [void](_ps10k_hl_line_valid '.\no-such-script-ps10k')
