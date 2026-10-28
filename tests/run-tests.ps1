@@ -169,6 +169,22 @@ Test-Case 'z ranks visited directories' {
     Assert-Equal 1 @(_ps10k_z_matches -Terms @('beta')).Count
 }
 
+Test-Case 'Tab falls back to in-place cycling when the menu cannot fit' {
+    Assert-Equal 1 (_ps10k_menu_rows (@('aaaaaaaa') * 10) 100) 'ten short items in one row'
+    Assert-Equal 13 (_ps10k_menu_rows (@('aaaaaaaa') * 25) 20) 'two columns of 8+2 cells'
+    Assert-Equal 3 (_ps10k_menu_rows @('a', 'b', 'c') 2) 'one column when items are wider than the window'
+    Assert-Equal 0 (_ps10k_menu_rows @() 80)
+    $tab = Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -eq 'Tab' } | Select-Object -First 1
+    Assert-Equal 'PS10kTabComplete' $tab.Function
+}
+
+Test-Case 'highlighting lookups do not fill $Error' {
+    $before = $global:Error.Count
+    [void](_ps10k_hl_line_valid '.\no-such-script-ps10k')
+    [void](_ps10k_hl_line_valid 'no-such-command-ps10k')
+    Assert-Equal $before $global:Error.Count
+}
+
 Test-Case 'cd without arguments goes home' {
     Push-Location
     try {
