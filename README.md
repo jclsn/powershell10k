@@ -23,8 +23,10 @@ PowerShell 7, and **installs without administrator rights**.
   their own colors.
 - **History substring search**: type `git`, then press <kbd>Up</kbd>/<kbd>Down</kbd>
   to step through every earlier command that starts with `git`.
-- **Tab completion menu**: Tab opens a menu and cycles through it; when the
-  menu is taller than the window, Tab cycles the matches in place.
+- **Tab completion grid**: Tab opens a grid below the line and moves through
+  it; the selection is reverse video of the theme's colors and the completed
+  text keeps the normal colors. When the grid is taller than the window, Tab
+  cycles the matches in place.
 - **zsh-autosuggestions** (opt-in): grey inline suggestions from history with
   `$PS10K_AUTOSUGGEST_INLINE = $true` in your profile (PSReadLine 2.4.5 is
   bundled and installed for your user).
@@ -124,7 +126,7 @@ $PS10K_SEGMENTS['hello'] = { param($ctx) @{ IconText = '*'; Text = 'hi'; Fg = 0;
 | `git` | `gst`, `ga`, `gaa`, `gc`, `gcmsg`, `gco`, `gcb`, `gd`, `gl`, `gp`, `gpsup`, `glog`, `grb`, `gsta`, `gstp`, `gsw`... and completion for subcommands, branches and remotes. The built-in `gc`, `gl` and `gp` aliases are replaced; `gm` and `gcm` stay `Get-Member`/`Get-Command` unless you set `$PS10K_GIT_OVERRIDE = @('gm','gcm')`. |
 | `z` | `z proj` jumps to the most frecent match, `z -l`, `z -x`, `z -c`. |
 | `aliases` | `..`, `...`, `ll`, `la`, `take`/`mkcd`, `touch`, `which`, `grep` (if missing), `hs` (search saved history), `path`. |
-| `autosuggestions` | prefix history search on Up/Down; Tab menu completion that always cycles (in place when the menu does not fit), without the full-path tooltip. Inline suggestions only with `$PS10K_AUTOSUGGEST_INLINE = $true`, a list below the line with `$PS10K_AUTOSUGGEST_LIST = $true`. |
+| `autosuggestions` | prefix history search on Up/Down; Tab/Shift+Tab completion grid (arrows move, Enter accepts, Esc undoes, Ctrl+c cancels; in place when the grid does not fit, PSReadLine's menu if the grid cannot run). Inline suggestions only with `$PS10K_AUTOSUGGEST_INLINE = $true`, a list below the line with `$PS10K_AUTOSUGGEST_LIST = $true`. |
 | `syntax-highlighting` | live green/red command validation plus a token color palette. The Tab completion grid is colored too: folders in the prompt's folder color, executables (`.ps1` and `PATHEXT`) green, archives red; `$PS10K_HL_COMPLETION = $false` turns that off. |
 | `vi-mode` | vi key bindings like `bindkey -v`: <kbd>Esc</kbd> for command mode, blinking bar cursor in insert mode and block in command mode, `❯`/`❮` prompt char, <kbd>Up</kbd>/<kbd>Down</kbd> and `k`/`j` prefix history search, <kbd>Ctrl</kbd>+<kbd>r</kbd>, `v` to edit the line in `$env:EDITOR`. Cursor shapes: `$PS10K_VI_CURSOR_INSERT`/`$PS10K_VI_CURSOR_NORMAL` (DECSCUSR numbers), `$PS10K_VI_CURSOR = $false` to leave the cursor alone. The cursor and prompt char switch need PSReadLine 2.1+. |
 | `extract` | `extract file.zip` / `x file.tar.gz` |
