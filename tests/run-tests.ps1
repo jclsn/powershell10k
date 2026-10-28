@@ -197,6 +197,17 @@ Test-Case 'highlighting accepts scripts and executables, not documents' {
     finally { Pop-Location }
 }
 
+Test-Case 'completion runs with Ctrl+c as a key and restores the console mode' {
+    $before = try { [Console]::TreatControlCAsInput } catch { $null }
+    function Invoke-Handler($key) { _ps10k_with_ctrl_c_as_key { "got $key" } }
+    Assert-Equal 'got Tab' (Invoke-Handler 'Tab') 'the action sees the handler variables'
+    try { _ps10k_with_ctrl_c_as_key { throw 'boom' } } catch { }
+    $after = try { [Console]::TreatControlCAsInput } catch { $null }
+    Assert-Equal $before $after 'console mode restored after an error'
+    $tab = Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -eq 'Tab' } | Select-Object -First 1
+    Assert-Equal 'PS10kTabComplete' $tab.Function
+}
+
 Test-Case 'highlighting lookups do not fill $Error' {
     $before = $global:Error.Count
     [void](_ps10k_hl_line_valid '.\no-such-script-ps10k')
