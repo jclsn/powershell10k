@@ -10,15 +10,18 @@
 if (-not (Get-Module PSReadLine)) { return }
 
 $global:PS10K_HL = @{
-    Valid   = "$([char]27)[38;5;76m"
-    Invalid = "$([char]27)[38;5;196m"
+    # The color scheme's green and red, so they follow the terminal theme.
+    Valid   = "$([char]27)[32m"
+    Invalid = "$([char]27)[31m"
     Current = $null
     Cache   = @{}
 }
 
 $ps10kE = [char]27
-# Default and String use the terminal's own colors (default foreground and the
-# scheme's magenta/purple), so they follow the Windows Terminal color scheme.
+# Default, String and Selection use the terminal's own colors (default
+# foreground, the scheme's magenta/purple, reverse video), so they follow the
+# Windows Terminal color scheme. Selection is the completion menu highlight:
+# terminal foreground as background, terminal background as text.
 Set-PSReadLineOption -Colors @{
     Command   = $global:PS10K_HL.Valid
     Parameter = "$ps10kE[38;5;117m"
@@ -33,6 +36,7 @@ Set-PSReadLineOption -Colors @{
     Error     = "$ps10kE[38;5;196m"
     Emphasis  = "$ps10kE[38;5;214m"
     Default   = "$ps10kE[39m"
+    Selection = "$ps10kE[7m"
 }
 Remove-Variable -Name ps10kE -ErrorAction SilentlyContinue
 
