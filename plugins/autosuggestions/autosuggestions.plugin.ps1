@@ -1,10 +1,10 @@
 # autosuggestions plugin: history-substring-search and completion on top of
 # PSReadLine.
 #   Up/Down      search history for lines starting with what you typed
-#   Tab          completion menu; Tab again cycles through it (no full-path
-#                tooltip below it). When the menu does not fit in the window,
-#                Tab cycles the matches in place instead.
-#   Shift+Tab    cycle backwards
+#   Tab          completion grid below the line (completion-grid.ps1); Tab
+#                again moves through it. When the grid does not fit in the
+#                window, Tab cycles the matches in place instead.
+#   Shift+Tab    the same, backwards
 # Inline suggestions from history (zsh-autosuggestions) are off, so nothing is
 # shown before you press Tab. Turn them on in your profile, before
 # powershell10k is loaded, with:
@@ -19,7 +19,6 @@ if (Get-Module PSReadLine) {
     Set-PSReadLineKeyHandler -Key UpArrow -Function HistorySearchBackward
     Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
     Set-PSReadLineOption -ShowToolTips:$false
-    Set-PSReadLineKeyHandler -Key Shift+Tab -Function TabCompletePrevious
 
     if ($ps10kPsrl -ge [version]'2.1.0') {
         $ps10kSource = if ($global:PS10K_AUTOSUGGEST_INLINE -or $global:PS10K_AUTOSUGGEST_LIST) { 'History' } else { 'None' }
@@ -58,28 +57,46 @@ function global:_ps10k_menu_fits([string]$Line, [int]$Cursor) {
     $lines + 1 + (_ps10k_menu_rows $items $ui.BufferSize.Width) -le $ui.WindowSize.Height
 }
 
+. (Join-Path $PSScriptRoot 'completion-grid.ps1')
+
+# Tab and Shift+Tab: powershell10k's completion grid; in-place cycling when the
+# grid does not fit; PSReadLine's menu when the grid cannot run.
+function global:_ps10k_tab_complete($Key, $Arg, [bool]$Backward) {
+    $line = $null; $cursor = $null
+    [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+    # Still cycling in place: keep going even though the line now holds a match.
+    $cycling = $null -ne $global:_ps10k_tab_cycle -and $global:_ps10k_tab_cycle -eq $line
+    $outcome = 'cycle'
+    if (-not $cycling) {
+        $global:_ps10k_tab_cycle = $null
+        try { $outcome = _ps10k_with_ctrl_c_as_key { _ps10k_grid_complete $line $cursor $Backward } }
+        catch { $outcome = 'menu' }
+    }
+    if ($outcome -eq 'menu') {
+        $fits = $true
+        try { $fits = _ps10k_menu_fits $line $cursor } catch { }
+        $outcome = if ($fits) { 'psreadline' } else { 'cycle' }
+    }
+    if ($outcome -eq 'cycle') {
+        if ($Backward) { [Microsoft.PowerShell.PSConsoleReadLine]::TabCompletePrevious($Key, $Arg) }
+        else { [Microsoft.PowerShell.PSConsoleReadLine]::TabCompleteNext($Key, $Arg) }
+        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+        $global:_ps10k_tab_cycle = $line
+    }
+    elseif ($outcome -eq 'psreadline') {
+        _ps10k_with_ctrl_c_as_key { [Microsoft.PowerShell.PSConsoleReadLine]::MenuComplete($Key, $Arg) }
+    }
+    # The completed line skipped syntax-highlighting's key handlers.
+    if (Get-Command _ps10k_hl_refresh -ErrorAction Ignore) { _ps10k_hl_refresh }
+}
+
 if (Get-Module PSReadLine) {
     $global:_ps10k_tab_cycle = $null
     Set-PSReadLineKeyHandler -Key Tab -BriefDescription 'PS10kTabComplete' `
-        -Description 'Menu completion, or cycle the matches in place when the menu does not fit' -ScriptBlock {
-        param($key, $arg)
-        $line = $null; $cursor = $null
-        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
-        # Still cycling in place: keep going even though the line now holds a match.
-        $cycling = $null -ne $global:_ps10k_tab_cycle -and $global:_ps10k_tab_cycle -eq $line
-        $fits = $true
-        if (-not $cycling) { try { $fits = _ps10k_menu_fits $line $cursor } catch { } }
-        if ($cycling -or -not $fits) {
-            [Microsoft.PowerShell.PSConsoleReadLine]::TabCompleteNext($key, $arg)
-            [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
-            $global:_ps10k_tab_cycle = $line
-        }
-        else {
-            $global:_ps10k_tab_cycle = $null
-            _ps10k_with_ctrl_c_as_key { [Microsoft.PowerShell.PSConsoleReadLine]::MenuComplete($key, $arg) }
-        }
-        # The completed line skipped syntax-highlighting's key handlers.
-        if (Get-Command _ps10k_hl_refresh -ErrorAction Ignore) { _ps10k_hl_refresh }
-    }
+        -Description 'Completion grid, or cycle the matches in place when it does not fit' `
+        -ScriptBlock { param($key, $arg) _ps10k_tab_complete $key $arg $false }
+    Set-PSReadLineKeyHandler -Key Shift+Tab -BriefDescription 'PS10kTabCompleteBackward' `
+        -Description 'Completion grid from the last match, or cycle backwards in place' `
+        -ScriptBlock { param($key, $arg) _ps10k_tab_complete $key $arg $true }
     Add-PS10kHook -Type precmd -Action { $global:_ps10k_tab_cycle = $null }
 }
