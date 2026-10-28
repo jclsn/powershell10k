@@ -65,6 +65,9 @@ Test-Case 'loader loads every plugin without warnings' {
 Test-Case 'display width ignores escape sequences' {
     Assert-Equal 3 (_ps10k_width "$([char]27)[38;5;1mabc$([char]27)[0m")
     Assert-Equal 2 (_ps10k_width ([string][char]0x4E2D))
+    Assert-Equal 9 (_ps10k_width ("$([char]0xDC)bersicht")) 'umlauts are one column'
+    Assert-Equal 3 (_ps10k_width ("a" + [char]::ConvertFromUtf32(0x1F600) + "$([char]1)")) 'emoji two columns, control characters none'
+    Assert-Equal 5 (_ps10k_width 'plain') 'ASCII fast path'
     Assert-Equal 1 (_ps10k_width "$([char]27)]9;9;`"C:\`"$([char]27)\x")
 }
 
