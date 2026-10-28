@@ -37,9 +37,10 @@ function global:_ps10k_hl_command_valid([string]$Name) {
     if ($cache.ContainsKey($Name)) { return $cache[$Name] }
     $valid = $false
     if ($Name -match '[\\/]' -or $Name.StartsWith('.')) {
-        $valid = Test-Path -LiteralPath $Name -PathType Leaf -ErrorAction SilentlyContinue
+        $valid = Test-Path -LiteralPath $Name -PathType Leaf -ErrorAction Ignore
     }
-    if (-not $valid) { $valid = [bool](Get-Command -Name $Name -ErrorAction SilentlyContinue | Select-Object -First 1) }
+    # Ignore, not SilentlyContinue: every partial word would land in $Error.
+    if (-not $valid) { $valid = [bool](Get-Command -Name $Name -ErrorAction Ignore | Select-Object -First 1) }
     $cache[$Name] = $valid
     $valid
 }
