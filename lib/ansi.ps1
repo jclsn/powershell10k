@@ -58,18 +58,19 @@ function global:_ps10k_is_wide([int]$cp) {
     ($cp -ge 0x20000 -and $cp -le 0x3FFFD)
 }
 
-# Number of terminal columns a string occupies once escape sequences are removed.
+# The ranges of _ps10k_is_wide as UTF-16, so whole strings can be counted at
+# once (astral ranges as surrogate pairs).
+$global:PS10K_WIDE_PATTERN = ('[{0}u1100-{0}u115F{0}u2E80-{0}uA4CF{0}uAC00-{0}uD7A3{0}uF900-{0}uFAFF{0}uFE30-{0}uFE4F{0}uFF00-{0}uFF60{0}uFFE0-{0}uFFE6]' +
+    '|{0}uD83C[{0}uDF00-{0}uDFFF]|{0}uD83D[{0}uDC00-{0}uDE4F]|{0}uD83E[{0}uDD00-{0}uDDFF]|[{0}uD840-{0}uD8BF][{0}uDC00-{0}uDFFF]') -f [char]92
+
+# Number of terminal columns a string occupies once escape sequences are
+# removed. Hot path (prompt, completion grid): plain ASCII returns at once,
+# everything else is counted with regexes rather than per character.
 function global:_ps10k_width([string]$Text) {
-    $plain = _ps10k_strip_ansi $Text
-    if (-not $plain) { return 0 }
-    $width = 0
-    $enum = [Globalization.StringInfo]::GetTextElementEnumerator($plain)
-    while ($enum.MoveNext()) {
-        $element = $enum.GetTextElement()
-        $cp = 0
-        try { $cp = [char]::ConvertToUtf32($element, 0) } catch { $cp = [int]$element[0] }
-        if ($cp -lt 32) { continue }
-        if (_ps10k_is_wide $cp) { $width += 2 } else { $width += 1 }
-    }
-    $width
+    if (-not $Text) { return 0 }
+    if ($Text.IndexOf([char]27) -ge 0) { $Text = $Text -replace $global:PS10K_ANSI_PATTERN, '' }
+    if ($Text -cmatch '^[\x20-\x7E]*$') { return $Text.Length }
+    $elements = (New-Object Globalization.StringInfo $Text).LengthInTextElements
+    $controls = [regex]::Matches($Text, '[\x00-\x1F]').Count
+    $elements - $controls + [regex]::Matches($Text, $global:PS10K_WIDE_PATTERN).Count
 }
