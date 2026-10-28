@@ -132,6 +132,7 @@ function global:_ps10k_hl_apply([bool]$Valid, [bool]$Bare, [bool]$Quoted) {
     $command = if ($Valid) { $hl.Valid } else { $hl.Invalid }
     $key = "$command|$Bare|$Quoted"
     $hl.LastValid = $Valid
+    $hl.Underlined = $Bare -or $Quoted
     if ($key -eq $hl.Current) { return $false }
     $hl.Current = $key
     $esc = [char]27
@@ -143,15 +144,46 @@ function global:_ps10k_hl_apply([bool]$Valid, [bool]$Bare, [bool]$Quoted) {
     $true
 }
 
+# When the line gets shorter, PSReadLine overwrites the old characters with
+# spaces in its fixed "after the last token" color, which resets the colors
+# but not the underline, so with an underlined path at the end those spaces
+# come out underlined. This writes them again without underline. Only the
+# cells the old line used are touched, so a right prompt on the same row
+# stays.
+function global:_ps10k_hl_clear_padding([string]$OldLine) {
+    if (-not $global:PS10K_HL.Underlined -or -not $OldLine) { return }
+    try {
+        $line = $null; $cursor = $null
+        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+        $remaining = (_ps10k_width $OldLine) - (_ps10k_width $line)
+        if ($remaining -le 0) { return }
+        $rl = _ps10k_rl_internals
+        if (-not $rl) { return }
+        $end = _ps10k_rl_end_point $rl
+        $left = [Console]::CursorLeft; $top = [Console]::CursorTop
+        $x = $end.X; $y = $end.Y; $width = [Console]::BufferWidth
+        while ($remaining -gt 0 -and $y -lt [Console]::BufferHeight) {
+            $cells = [Math]::Min($remaining, $width - $x)
+            [Console]::SetCursorPosition($x, $y)
+            [Console]::Write("$([char]27)[24m" + (' ' * $cells))
+            $remaining -= $cells; $x = 0; $y++
+        }
+        [Console]::SetCursorPosition($left, $top)
+    }
+    catch { }
+}
+
 # Recolors after keys that replace the line (history, paste, completion):
 # replacing the buffer with itself re-renders it with the new color.
-function global:_ps10k_hl_refresh {
+# $OldLine is the line before the key, to clear underlined padding.
+function global:_ps10k_hl_refresh([string]$OldLine) {
     try {
         $b = _ps10k_hl_buffer
         if (_ps10k_hl_update $b.Line) {
             [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $b.Line.Length, $b.Line)
             [Microsoft.PowerShell.PSConsoleReadLine]::SetCursorPosition($b.Cursor)
         }
+        _ps10k_hl_clear_padding $OldLine
     }
     catch { }
 }
@@ -185,6 +217,7 @@ Set-PSReadLineKeyHandler -Key Backspace -BriefDescription 'PS10kHighlightBackspa
     }
     catch { }
     [Microsoft.PowerShell.PSConsoleReadLine]::BackwardDeleteChar($key, $arg)
+    if ($b) { _ps10k_hl_clear_padding $b.Line }
 }
 
 Set-PSReadLineKeyHandler -Key Delete -BriefDescription 'PS10kHighlightDelete' -ScriptBlock {
@@ -195,6 +228,7 @@ Set-PSReadLineKeyHandler -Key Delete -BriefDescription 'PS10kHighlightDelete' -S
     }
     catch { }
     [Microsoft.PowerShell.PSConsoleReadLine]::DeleteChar($key, $arg)
+    if ($b) { _ps10k_hl_clear_padding $b.Line }
 }
 
 # Keys that replace the whole line (history, paste, completion): run the
@@ -207,8 +241,9 @@ foreach ($ps10kKey in 'UpArrow', 'DownArrow', 'Ctrl+v', 'Tab', 'Shift+Tab') {
     $ps10kFunction = $ps10kBound.Function
     $ps10kHandler = [scriptblock]::Create(@"
 param(`$key, `$arg)
+`$old = (_ps10k_hl_buffer).Line
 _ps10k_with_ctrl_c_as_key { [Microsoft.PowerShell.PSConsoleReadLine]::$ps10kFunction(`$key, `$arg) }
-_ps10k_hl_refresh
+_ps10k_hl_refresh `$old
 "@)
     Set-PSReadLineKeyHandler -Chord $ps10kKey -BriefDescription "PS10k$ps10kFunction" -ScriptBlock $ps10kHandler
 }

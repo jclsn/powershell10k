@@ -64,6 +64,7 @@ function global:_ps10k_menu_fits([string]$Line, [int]$Cursor) {
 function global:_ps10k_tab_complete($Key, $Arg, [bool]$Backward) {
     $line = $null; $cursor = $null
     [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+    $before = $line
     # Still cycling in place: keep going even though the line now holds a match.
     $cycling = $null -ne $global:_ps10k_tab_cycle -and $global:_ps10k_tab_cycle -eq $line
     $outcome = 'cycle'
@@ -87,7 +88,7 @@ function global:_ps10k_tab_complete($Key, $Arg, [bool]$Backward) {
         _ps10k_with_ctrl_c_as_key { [Microsoft.PowerShell.PSConsoleReadLine]::MenuComplete($Key, $Arg) }
     }
     # The completed line skipped syntax-highlighting's key handlers.
-    if (Get-Command _ps10k_hl_refresh -ErrorAction Ignore) { _ps10k_hl_refresh }
+    if (Get-Command _ps10k_hl_refresh -ErrorAction Ignore) { _ps10k_hl_refresh $before }
 }
 
 if (Get-Module PSReadLine) {
