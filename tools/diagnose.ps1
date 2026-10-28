@@ -85,6 +85,36 @@
     else {
         Add-Line "import attempt  $(Try-Value { Import-Module PSReadLine -PassThru -ErrorAction Stop | ForEach-Object { "worked: $($_.Version)" } })"
     }
+    if ($loaded) {
+        Add-Line "Selection color $(Try-Value { (Get-PSReadLineOption).SelectionColor -replace [char]27, 'ESC' })"
+        Add-Line "Emphasis color  $(Try-Value { (Get-PSReadLineOption).EmphasisColor -replace [char]27, 'ESC' })"
+        Add-Line "query items     $(Try-Value { (Get-PSReadLineOption).CompletionQueryItems })"
+        Add-Line "extra lines     $(Try-Value { (Get-PSReadLineOption).ExtraPromptLineCount })"
+    }
+
+    Add-Section 'completion here'
+    $here = Get-Location
+    Add-Line "location        $($here.Path) (provider $($here.Provider.Name))"
+    if ($here.Provider.Name -eq 'FileSystem') {
+        $drive = Try-Value { ([IO.DriveInfo]$here.ProviderPath.Substring(0, 3)).DriveType }
+        Add-Line "drive type      $drive$(if ($here.ProviderPath -like '\\*') { ' (UNC path)' })"
+    }
+    Add-Line "window          $(Try-Value { "$($Host.UI.RawUI.WindowSize.Width)x$($Host.UI.RawUI.WindowSize.Height), buffer $($Host.UI.RawUI.BufferSize.Width)x$($Host.UI.RawUI.BufferSize.Height)" })"
+    $sample = 'Get-ChildItem .\'
+    $completion = $null
+    try { $completion = TabExpansion2 -inputScript $sample -cursorColumn $sample.Length } catch { Add-Line "TabExpansion2   <error: $($_.Exception.Message)>" }
+    if ($completion) {
+        $matches10k = @($completion.CompletionMatches)
+        Add-Line "matches         $($matches10k.Count) for '$sample'"
+        $missing = @($matches10k | Where-Object { $_.ResultType -eq 'ProviderItem' -or $_.ResultType -eq 'ProviderContainer' } |
+            Where-Object { -not (Test-Path -LiteralPath ($_.CompletionText.Trim("'", '"', '&', ' '))) })
+        Add-Line "missing on disk $($missing.Count)$(if ($missing) { ' e.g. ' + (($missing | Select-Object -First 3 | ForEach-Object { $_.CompletionText }) -join ', ') })"
+        if (Get-Command _ps10k_menu_fits -ErrorAction Ignore) { Add-Line "menu fits       $(Try-Value { _ps10k_menu_fits $sample $sample.Length })" }
+    }
+    $tabExpansion = Get-Command TabExpansion2 -ErrorAction Ignore
+    Add-Line "TabExpansion2   $(if ($tabExpansion.ScriptBlock.File) { "overridden in $($tabExpansion.ScriptBlock.File)" } else { 'built-in' })"
+    $completers = Try-Value { @(Get-Command -CommandType Function | Where-Object { $_.Name -like 'TabExpansion*' } | ForEach-Object Name) -join ', ' }
+    Add-Line "completion fns  $completers"
 
     Add-Section 'recent errors'
     foreach ($e in $recentErrors) { Add-Line "  $(("$e" -split "`r?`n")[0])" }
