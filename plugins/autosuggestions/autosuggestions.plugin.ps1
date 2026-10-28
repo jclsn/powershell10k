@@ -76,7 +76,7 @@ if (Get-Module PSReadLine) {
         }
         else {
             $global:_ps10k_tab_cycle = $null
-            [Microsoft.PowerShell.PSConsoleReadLine]::MenuComplete($key, $arg)
+            _ps10k_with_ctrl_c_as_key { [Microsoft.PowerShell.PSConsoleReadLine]::MenuComplete($key, $arg) }
         }
         # The completed line skipped syntax-highlighting's key handlers.
         if (Get-Command _ps10k_hl_refresh -ErrorAction Ignore) { _ps10k_hl_refresh }

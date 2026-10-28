@@ -53,6 +53,16 @@ function global:_ps10k_accept_line {
     [Microsoft.PowerShell.PSConsoleReadLine]::AcceptLine()
 }
 
+# PSReadLine runs script key handlers in the console's normal input mode, in
+# which Ctrl+c is a break signal rather than a key. Functions with their own
+# key loop, such as the completion menu, need it as a key to cancel with it.
+function global:_ps10k_with_ctrl_c_as_key([scriptblock]$Action) {
+    $old = $true
+    try { $old = [Console]::TreatControlCAsInput; [Console]::TreatControlCAsInput = $true } catch { }
+    try { & $Action }
+    finally { try { [Console]::TreatControlCAsInput = $old } catch { } }
+}
+
 # Binds Enter to _ps10k_accept_line, in both vi tables when vi mode is on.
 function global:_ps10k_bind_accept_line {
     if (-not (Get-Module PSReadLine)) { return }

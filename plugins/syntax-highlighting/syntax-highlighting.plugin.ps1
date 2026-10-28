@@ -140,7 +140,7 @@ foreach ($ps10kKey in 'UpArrow', 'DownArrow', 'Ctrl+v', 'Tab', 'Shift+Tab') {
     $ps10kFunction = $ps10kBound.Function
     $ps10kHandler = [scriptblock]::Create(@"
 param(`$key, `$arg)
-[Microsoft.PowerShell.PSConsoleReadLine]::$ps10kFunction(`$key, `$arg)
+_ps10k_with_ctrl_c_as_key { [Microsoft.PowerShell.PSConsoleReadLine]::$ps10kFunction(`$key, `$arg) }
 _ps10k_hl_refresh
 "@)
     Set-PSReadLineKeyHandler -Chord $ps10kKey -BriefDescription "PS10k$ps10kFunction" -ScriptBlock $ps10kHandler
