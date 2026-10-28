@@ -116,6 +116,52 @@
     $completers = Try-Value { @(Get-Command -CommandType Function | Where-Object { $_.Name -like 'TabExpansion*' } | ForEach-Object Name) -join ', ' }
     Add-Line "completion fns  $completers"
 
+    Add-Section 'appearance: prompt config'
+    $configPath = if ($env:PS10K_CONFIG) { $env:PS10K_CONFIG } else { Join-Path $HOME '.p10k.ps1' }
+    if (Test-Path -LiteralPath $configPath) {
+        Add-Line "file            $configPath"
+        foreach ($l in Get-Content -LiteralPath $configPath | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' }) { Add-Line "  $l" }
+    }
+    else { Add-Line "file            $configPath (missing: defaults)" }
+
+    Add-Section 'appearance: PSReadLine colors'
+    if ($loaded) {
+        $o = Get-PSReadLineOption
+        foreach ($p in $o.PSObject.Properties | Where-Object { $_.Name -like '*Color' } | Sort-Object Name) {
+            Add-Line ("{0,-24} {1}" -f $p.Name, ("$($p.Value)" -replace [char]27, 'ESC'))
+        }
+    }
+
+    Add-Section 'appearance: Windows Terminal'
+    Add-Line "WT_PROFILE_ID   $env:WT_PROFILE_ID"
+    $wtFiles = @(
+        (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'),
+        (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json'),
+        (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows Terminal\settings.json')
+    ) | Where-Object { Test-Path -LiteralPath $_ }
+    $wtPackage = Try-Value { (Get-AppxPackage Microsoft.WindowsTerminal* -ErrorAction Stop | ForEach-Object { "$($_.Name) $($_.Version)" }) -join ', ' }
+    Add-Line "package         $wtPackage"
+    foreach ($wtFile in $wtFiles) {
+        Add-Line "settings        $wtFile"
+        try {
+            # Drop // comments and trailing commas; good enough for these keys.
+            $json = (Get-Content -LiteralPath $wtFile -Raw) -replace '(?m)^\s*//.*$', '' -replace ',(\s*[}\]])', '$1'
+            $wt = $json | ConvertFrom-Json
+            foreach ($key in 'theme', 'useAcrylicInTabRow', 'experimental.rendering.forceFullRepaint', 'rendering.graphicsAPI') {
+                if ($wt.PSObject.Properties[$key]) { Add-Line ("  {0,-22} {1}" -f $key, $wt.$key) }
+            }
+            Add-Line "  defaults        $($wt.profiles.defaults | ConvertTo-Json -Compress -Depth 5)"
+            $current = @($wt.profiles.list) | Where-Object { $_.guid -eq $env:WT_PROFILE_ID }
+            if (-not $current) { $current = @($wt.profiles.list) | Where-Object { $_.guid -eq $wt.defaultProfile } }
+            if ($current) { Add-Line "  this profile    $($current | ConvertTo-Json -Compress -Depth 5)" }
+            $schemeName = if ($current -and $current.colorScheme) { $current.colorScheme } else { $wt.profiles.defaults.colorScheme }
+            $scheme = @($wt.schemes) | Where-Object { $_.name -eq $schemeName }
+            Add-Line "  scheme in use   $(if ($schemeName) { $schemeName } else { '(built-in default)' })$(if ($schemeName -and -not $scheme) { '  (NOT in schemes list)' })"
+            if ($scheme) { Add-Line "  scheme          $($scheme | ConvertTo-Json -Compress)" }
+        }
+        catch { Add-Line "  <could not parse: $($_.Exception.Message)>" }
+    }
+
     Add-Section 'recent errors'
     foreach ($e in $recentErrors) { Add-Line "  $(("$e" -split "`r?`n")[0])" }
 
