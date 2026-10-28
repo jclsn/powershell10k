@@ -231,6 +231,32 @@ Test-Case 'completion grid colors folders, executables and archives' {
     finally { Pop-Location }
 }
 
+Test-Case 'completion grid selects in reverse video without entry colors' {
+    $esc = [char]27
+    $blue = "$esc[38;5;31m"
+    $selected = _ps10k_grid_cell 'vim' $blue $true 15
+    Assert-True $selected.StartsWith("$esc[39;49;7mvim$esc[27m") 'reverse video of the default colors'
+    Assert-True (-not $selected.Contains($blue)) 'a selected folder loses its color'
+    Assert-Equal 15 (_ps10k_width $selected) 'cell keeps the column width'
+    $plain = _ps10k_grid_cell 'vim' $blue $false 15
+    Assert-True $plain.StartsWith("$($blue)vim$esc[39m") 'other folders keep their color'
+    Assert-Equal 'very-long-f... ' (_ps10k_grid_cell 'very-long-folder-name' $null $false 15) 'long names are cut to the column'
+
+    $layout = _ps10k_grid_layout @('powershell10k', 'vim', 'xwax') 80
+    Assert-Equal 15 $layout.ColumnWidth
+    Assert-Equal 1 $layout.Rows
+    $grid = @{ Items = @('powershell10k', 'vim', 'xwax'); Colors = @($blue, $blue, $blue); Layout = $layout; Selected = 1 }
+    $lines = @(_ps10k_grid_lines $grid)
+    Assert-Equal 1 $lines.Count
+    Assert-Equal 'powershell10k  vim            xwax' (_ps10k_strip_ansi $lines[0]).TrimEnd()
+    $column = (_ps10k_grid_layout (1..10 | ForEach-Object { "item$_" }) 16)
+    Assert-Equal 2 $column.Columns 'two columns of 6+2 cells'
+    Assert-Equal 5 $column.Rows
+    Assert-True ($null -eq (_ps10k_grid_internals) -or (_ps10k_grid_internals).EndOfBuffer) 'internals are found or cleanly missing'
+    $shiftTab = Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -eq 'Shift+Tab' } | Select-Object -First 1
+    Assert-Equal 'PS10kTabCompleteBackward' $shiftTab.Function
+}
+
 Test-Case 'highlighting lookups do not fill $Error' {
     $before = $global:Error.Count
     [void](_ps10k_hl_line_valid '.\no-such-script-ps10k')
