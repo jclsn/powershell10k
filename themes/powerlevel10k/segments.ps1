@@ -13,17 +13,32 @@ try {
 }
 catch { $global:_ps10k_is_admin = $false }
 
+# The session's jobs. Get-Job loads the job infrastructure (about 190 ms on
+# the first prompt); the runspace's job list, which Get-Job reads too, is
+# internal in Windows PowerShell but cheap to read through reflection.
+function global:_ps10k_session_jobs {
+    $runspace = [runspace]::DefaultRunspace
+    if ($null -eq $global:_ps10k_job_property) {
+        $global:_ps10k_job_property = $runspace.GetType().GetProperty('JobRepository', [Reflection.BindingFlags]'Public, NonPublic, Instance')
+        if (-not $global:_ps10k_job_property) { $global:_ps10k_job_property = $false }
+    }
+    if ($global:_ps10k_job_property) {
+        $repository = try { $global:_ps10k_job_property.GetValue($runspace) } catch { $null }
+        if ($repository) { return $repository.Jobs }
+    }
+    Get-Job -ErrorAction SilentlyContinue
+}
+
 # Searches $Path and its parents for any of $Names; returns the first hit.
+# Runs on every prompt, so it uses .NET checks instead of Test-Path.
 function global:_ps10k_find_up([string]$Path, [string[]]$Names) {
     $dir = $Path
     while ($dir) {
         foreach ($name in $Names) {
-            $candidate = Join-Path $dir $name
-            if (Test-Path -LiteralPath $candidate) { return $candidate }
+            $candidate = [IO.Path]::Combine($dir, $name)
+            if ([IO.File]::Exists($candidate) -or [IO.Directory]::Exists($candidate)) { return $candidate }
         }
-        $parent = Split-Path -Path $dir -Parent
-        if (-not $parent -or $parent -eq $dir) { break }
-        $dir = $parent
+        $dir = [IO.Path]::GetDirectoryName($dir)
     }
     $null
 }
@@ -142,7 +157,8 @@ $global:PS10K_SEGMENTS['command_execution_time'] = {
 
 $global:PS10K_SEGMENTS['background_jobs'] = {
     param($ctx)
-    $running = @(Get-Job -ErrorAction SilentlyContinue | Where-Object { $_.State -eq 'Running' }).Count
+    $running = 0
+    foreach ($job in (_ps10k_session_jobs)) { if ($job.JobStateInfo.State -eq 'Running') { $running++ } }
     if ($running -eq 0) { return $null }
     $text = if ($running -gt 1) { "$running" } else { '' }
     @{ Icon = 'jobs'; Text = $text }
@@ -164,11 +180,11 @@ $global:PS10K_SEGMENTS['node_version'] = {
     param($ctx)
     if ($ctx.Location.Provider.Name -ne 'FileSystem') { return $null }
     if ($global:P10K.NodeProjectOnly -and -not (_ps10k_find_up $ctx.Location.ProviderPath @('package.json'))) { return $null }
-    $node = Get-Command node -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    $node = _ps10k_find_exe 'node'
     if (-not $node) { return $null }
-    $key = "node:$($node.Source)"
+    $key = "node:$node"
     if (-not $global:_ps10k_cache.ContainsKey($key)) {
-        $global:_ps10k_cache[$key] = ("$(& $node.Source --version 2>$null)").Trim().TrimStart('v')
+        $global:_ps10k_cache[$key] = ("$(& $node --version 2>$null)").Trim().TrimStart('v')
     }
     if (-not $global:_ps10k_cache[$key]) { return $null }
     @{ Icon = 'node'; Text = $global:_ps10k_cache[$key] }
@@ -178,14 +194,17 @@ $global:PS10K_SEGMENTS['dotnet_version'] = {
     param($ctx)
     if ($ctx.Location.Provider.Name -ne 'FileSystem') { return $null }
     $dir = $ctx.Location.ProviderPath
-    $isProject = (Test-Path -LiteralPath (Join-Path $dir 'global.json')) -or
-        @(Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Extension -in '.csproj', '.fsproj', '.vbproj', '.sln' }).Count -gt 0
+    # Pattern checks stop at the first hit instead of listing the folder.
+    $isProject = [IO.File]::Exists([IO.Path]::Combine($dir, 'global.json'))
+    foreach ($pattern in '*.csproj', '*.fsproj', '*.vbproj', '*.sln') {
+        if ($isProject) { break }
+        try { $isProject = [IO.Directory]::EnumerateFiles($dir, $pattern).GetEnumerator().MoveNext() } catch { }
+    }
     if (-not $isProject) { return $null }
     $key = "dotnet:$dir"
     if (-not $global:_ps10k_cache.ContainsKey($key)) {
-        $dotnet = Get-Command dotnet -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        $global:_ps10k_cache[$key] = if ($dotnet) { ("$(& $dotnet.Source --version 2>$null)").Trim() } else { '' }
+        $dotnet = _ps10k_find_exe 'dotnet'
+        $global:_ps10k_cache[$key] = if ($dotnet) { ("$(& $dotnet --version 2>$null)").Trim() } else { '' }
     }
     if (-not $global:_ps10k_cache[$key]) { return $null }
     @{ Icon = 'dotnet'; Text = $global:_ps10k_cache[$key] }
