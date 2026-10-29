@@ -162,3 +162,29 @@ Test-Case 'git completion offers subcommands, branches and remotes' {
     }
     finally { Pop-Location }
 }
+
+Test-Case 'git helpers that talk to remotes use the current and main branch' {
+    $global:_test_git = New-Object System.Collections.ArrayList
+    function global:git {
+        $line = $args -join ' '
+        [void]$global:_test_git.Add($line)
+        switch -Wildcard ($line) {
+            'symbolic-ref*' { 'feature'; break }
+            'show-ref -q --verify refs/heads/main' { $global:LASTEXITCODE = 0; break }
+            'show-ref*' { $global:LASTEXITCODE = 1 }
+        }
+    }
+    try {
+        $expected = [ordered]@{
+            ggpush = 'push origin feature'; ggpull = 'pull origin feature'; gpsup = 'push --set-upstream origin feature'
+            groh = 'reset origin/feature --hard'; gmom = 'merge origin/main'; grbm = 'rebase main'
+            gcmain = 'checkout main'; gcd = 'checkout develop'
+        }
+        foreach ($helper in $expected.Keys) {
+            $global:_test_git.Clear()
+            & $helper
+            Assert-Equal $expected[$helper] $global:_test_git[-1] $helper
+        }
+    }
+    finally { Remove-Item Function:\git, Variable:\_test_git -ErrorAction SilentlyContinue }
+}

@@ -69,6 +69,26 @@ Test-Case 'vi-mode cursor shapes and prompt text' {
     Assert-Equal "$(_ps10k_icon 'prompt') " ((Get-PSReadLineOption).PromptText -join '')
 }
 
+Test-Case 'vi-mode switches cursor, state and prompt text on mode changes' {
+    $state = $global:_ps10k_state
+    $savedPrompt = $state.LastPrompt
+    try {
+        $state.LastPrompt = $null
+        # Colors already right for the empty line: no redraw, which needs a running prompt.
+        [void](_ps10k_hl_update '')
+        $global:PS10K_VI_MODE = 'Insert'
+        $out = Get-ConsoleOutput { _ps10k_vi_mode_changed 'Command' }
+        Assert-True ($out.StartsWith("$([char]27)[2 q")) 'block cursor'
+        Assert-Equal 'Command' $global:PS10K_VI_MODE
+        Assert-Equal 'Command' $state.ViMode
+        $out = Get-ConsoleOutput { _ps10k_vi_mode_changed 'Command' }
+        Assert-Equal "$([char]27)[2 q" $out 'same mode: only the cursor'
+        [void](Get-ConsoleOutput { _ps10k_vi_mode_changed 'Insert' })
+        Assert-Equal 'Insert' $global:PS10K_VI_MODE
+    }
+    finally { $state.LastPrompt = $savedPrompt; $state.ViMode = 'Insert'; $global:PS10K_VI_MODE = 'Insert' }
+}
+
 Test-Case 'z keeps, ages, removes and jumps to directories' {
     $saved = $env:PS10K_Z_DATA
     $env:PS10K_Z_DATA = Join-Path $work 'z-test'

@@ -108,3 +108,25 @@ Test-Case 'completion grid scrolls when it is taller than the window' {
     Assert-True (-not $small.Paged) 'a grid that fits has no status line'
     Assert-Equal 1 @(_ps10k_grid_lines $small).Count
 }
+
+Test-Case 'grid colors match the highlighting rules' {
+    $dir = Join-Path $work 'grid-colors'
+    New-Item -ItemType Directory -Path (Join-Path $dir 'sub') -Force | Out-Null
+    foreach ($name in 'a.exe', 'b.zip', 'c.txt') { Set-Content -LiteralPath (Join-Path $dir $name) -Value 'x' }
+    Push-Location -LiteralPath $dir
+    try {
+        $results = @((& $global:_ps10k_tabexpansion2 -inputScript 'ls ' -cursorColumn 3).CompletionMatches)
+        $items = @($results | ForEach-Object { $_.ListItemText })
+        $colors = _ps10k_grid_colors $results $items
+        $folder = _ps10k_hl_folder_color
+        for ($i = 0; $i -lt $results.Count; $i++) {
+            $plain = New-Object System.Management.Automation.CompletionResult($results[$i].CompletionText, $items[$i], $results[$i].ResultType, $items[$i])
+            Assert-Equal "$(_ps10k_hl_completion_color $plain $folder)" "$($colors[$i])" "same color for $($items[$i])"
+        }
+        Assert-True (_ps10k_menu_fits 'ls ' 3) 'four entries fit'
+        Assert-Equal 2 (_ps10k_grid_column_width @{ Layout = @{ Rows = 2; ColumnWidths = @(5, 2) } } 3)
+        Assert-Equal 7 (_ps10k_grid_text_width @{ Widths = @(1, 7) } 1)
+        Assert-Equal -1 (_ps10k_grid_text_width @{} 0) 'unknown width'
+    }
+    finally { Pop-Location }
+}

@@ -79,3 +79,54 @@ Test-Case 'syntax highlighting detects unknown commands' {
     Assert-True (-not (_ps10k_hl_line_valid 'definitely-not-a-command-ps10k'))
     Assert-True (_ps10k_hl_line_valid '')
 }
+
+Test-Case 'command lookups are cached and documents are not executables' {
+    $global:PS10K_HL.Cache = @{}
+    Assert-True (_ps10k_hl_command_valid 'Get-ChildItem')
+    Assert-True $global:PS10K_HL.Cache.ContainsKey('Get-ChildItem') 'cached'
+    $global:PS10K_HL.Cache['made-up-ps10k'] = $true
+    Assert-True (_ps10k_hl_command_valid 'made-up-ps10k') 'the cache is used'
+    Assert-True (_ps10k_hl_executable (Get-Command Get-ChildItem)) 'cmdlets'
+    Assert-True (_ps10k_hl_executable ([pscustomobject]@{ CommandType = 'Application'; Source = 'C:\x\tool.EXE' })) 'case-insensitive extensions'
+    Assert-True (-not (_ps10k_hl_executable ([pscustomobject]@{ CommandType = 'Application'; Source = 'C:\x\notes.md' })))
+    $global:PS10K_HL.Cache = @{}
+}
+
+Test-Case 'colors are only set when they change' {
+    $esc = [char]27
+    $global:PS10K_HL.Current = $null
+    Assert-True (_ps10k_hl_apply $true $false $false) 'first call sets the colors'
+    Assert-True (-not (_ps10k_hl_apply $true $false $false)) 'unchanged: nothing to do'
+    Assert-True (_ps10k_hl_apply $false $false $true)
+    Assert-Equal "$esc[24m$($global:PS10K_HL.Invalid)" (Get-PSReadLineOption).CommandColor 'invalid command in red'
+    Assert-Equal "$esc[4m$($global:PS10K_HL.String)" (Get-PSReadLineOption).StringColor 'quoted paths underlined'
+    [void](_ps10k_hl_update '')
+    $buffer = _ps10k_hl_buffer
+    Assert-Equal '' $buffer.Line
+    Assert-Equal 0 $buffer.Cursor
+    _ps10k_hl_refresh '' $true
+}
+
+Test-Case 'completion colors for folders, executables, archives and the rest' {
+    function New-Result($Text, $Type) { New-Object System.Management.Automation.CompletionResult($Text, $Text, $Type, $Text) }
+    $folder = _ps10k_hl_folder_color
+    Assert-Equal $folder (_ps10k_hl_completion_color (New-Result 'src' 'ProviderContainer') $folder)
+    Assert-Equal $global:PS10K_HL.Valid (_ps10k_hl_completion_color (New-Result 'run.ps1' 'ProviderItem') $folder)
+    Assert-Equal $global:PS10K_HL.Invalid (_ps10k_hl_completion_color (New-Result 'pack.tar.gz' 'ProviderItem') $folder) 'by the last extension'
+    Assert-True ($null -eq (_ps10k_hl_completion_color (New-Result 'notes.txt' 'ProviderItem') $folder))
+    Assert-True ($null -eq (_ps10k_hl_completion_color (New-Result 'Makefile' 'ProviderItem') $folder)) 'no extension'
+    Assert-True ($null -eq (_ps10k_hl_completion_color (New-Result 'Get-Item' 'Command') $folder)) 'only files and folders'
+    $mixed = New-Object System.Management.Automation.CommandCompletion(
+        [System.Collections.ObjectModel.Collection[System.Management.Automation.CompletionResult]]@((New-Result "'a b'" 'ProviderContainer'), (New-Result 'c' 'ProviderContainer')), -1, 0, 0)
+    _ps10k_hl_color_completions $mixed
+    Assert-True (-not $mixed.CompletionMatches[1].ListItemText.Contains([char]27)) 'no common prefix: left uncolored'
+    $saved = $global:PS10K_HL_COMPLETION
+    try {
+        $global:PS10K_HL_COMPLETION = $false
+        $plain = New-Object System.Management.Automation.CommandCompletion(
+            [System.Collections.ObjectModel.Collection[System.Management.Automation.CompletionResult]]@((New-Result '.\a' 'ProviderContainer'), (New-Result '.\b' 'ProviderContainer')), -1, 0, 0)
+        _ps10k_hl_color_completions $plain
+        Assert-True (-not $plain.CompletionMatches[0].ListItemText.Contains([char]27)) 'switched off'
+    }
+    finally { $global:PS10K_HL_COMPLETION = $saved }
+}
