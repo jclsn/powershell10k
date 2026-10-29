@@ -1,8 +1,6 @@
 # Git repository detection and status parsing. A single
 # `git status --porcelain=v2` call per prompt provides everything we show.
 
-$global:_ps10k_git_exe = $null
-
 # Walks up from $Path looking for .git; returns @{ Root; GitDir } or $null.
 # Runs on every prompt, so it uses .NET file checks instead of Test-Path.
 # A .git file (worktrees, submodules) points to the real git dir.
@@ -57,12 +55,12 @@ function global:_ps10k_parse_git_status([string[]]$Lines) {
 }
 
 function global:_ps10k_git_action([string]$GitDir) {
-    if (Test-Path -LiteralPath (Join-Path $GitDir 'rebase-merge')) { return 'rebase' }
-    if (Test-Path -LiteralPath (Join-Path $GitDir 'rebase-apply')) { return 'rebase' }
-    if (Test-Path -LiteralPath (Join-Path $GitDir 'MERGE_HEAD')) { return 'merge' }
-    if (Test-Path -LiteralPath (Join-Path $GitDir 'CHERRY_PICK_HEAD')) { return 'cherry-pick' }
-    if (Test-Path -LiteralPath (Join-Path $GitDir 'REVERT_HEAD')) { return 'revert' }
-    if (Test-Path -LiteralPath (Join-Path $GitDir 'BISECT_LOG')) { return 'bisect' }
+    # Marker files and folders git leaves while an operation is in progress.
+    if ([IO.Directory]::Exists([IO.Path]::Combine($GitDir, 'rebase-merge'))) { return 'rebase' }
+    if ([IO.Directory]::Exists([IO.Path]::Combine($GitDir, 'rebase-apply'))) { return 'rebase' }
+    foreach ($marker in @(@('MERGE_HEAD', 'merge'), @('CHERRY_PICK_HEAD', 'cherry-pick'), @('REVERT_HEAD', 'revert'), @('BISECT_LOG', 'bisect'))) {
+        if ([IO.File]::Exists([IO.Path]::Combine($GitDir, $marker[0]))) { return $marker[1] }
+    }
     $null
 }
 
@@ -70,12 +68,8 @@ function global:_ps10k_git_action([string]$GitDir) {
 function global:_ps10k_git_status([string]$Path) {
     $repo = _ps10k_find_repo $Path
     if (-not $repo) { return $null }
-    if (-not $global:_ps10k_git_exe) {
-        $cmd = Get-Command git -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $cmd) { return $null }
-        $global:_ps10k_git_exe = $cmd.Source
-    }
-    $git = $global:_ps10k_git_exe
+    $git = _ps10k_find_exe 'git'
+    if (-not $git) { return $null }
     $lines = & $git -C $repo.Root --no-optional-locks -c core.quotepath=false status --porcelain=v2 --branch --show-stash 2>$null
     if ($LASTEXITCODE -ne 0) {
         # --show-stash needs git 2.35+.

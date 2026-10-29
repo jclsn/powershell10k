@@ -49,13 +49,13 @@ function global:_ps10k_default_config {
 
 function global:_ps10k_config_path {
     if ($env:PS10K_CONFIG) { return $env:PS10K_CONFIG }
-    Join-Path $HOME '.p10k.ps1'
+    [IO.Path]::Combine($HOME, '.p10k.ps1')
 }
 
 function global:_ps10k_load_config {
     $global:P10K = _ps10k_default_config
     $path = _ps10k_config_path
-    if (Test-Path -LiteralPath $path) {
+    if ([IO.File]::Exists($path)) {
         try { . $path }
         catch { Write-Warning "powershell10k: failed to load ${path}: $_" }
     }

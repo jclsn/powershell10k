@@ -11,10 +11,11 @@
 if (-not $env:PS10K_HOME) { $env:PS10K_HOME = $PSScriptRoot }
 if (-not $global:PS10K_THEME) { $global:PS10K_THEME = 'powerlevel10k' }
 if ($null -eq $global:PS10K_PLUGINS) { $global:PS10K_PLUGINS = @('git') }
-if (-not $global:PS10K_CUSTOM) { $global:PS10K_CUSTOM = Join-Path $env:PS10K_HOME 'custom' }
+if (-not $global:PS10K_CUSTOM) { $global:PS10K_CUSTOM = [IO.Path]::Combine($env:PS10K_HOME, 'custom') }
 
 # Glyphs need UTF-8 output; Windows PowerShell defaults to the OEM code page.
-try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
+# Setting it costs about 60 ms, so only when it is not UTF-8 already.
+try { if ([Console]::OutputEncoding.CodePage -ne 65001) { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } } catch { }
 
 # Start from a clean slate so `ps10k reload` does not register hooks twice.
 $global:PS10K_HOOKS = $null
@@ -25,13 +26,13 @@ function global:_ps10k_load_error([string]$Message) {
     Write-Warning "powershell10k: $Message"
 }
 
-foreach ($ps10kFile in @(Get-ChildItem -LiteralPath (Join-Path $env:PS10K_HOME 'lib') -Filter '*.ps1' | Sort-Object Name)) {
-    . $ps10kFile.FullName
+# .NET instead of Get-ChildItem, Join-Path and Test-Path here and on every
+# prompt: each of those costs 50-110 ms the first time it runs in a session.
+foreach ($ps10kFile in @([IO.Directory]::GetFiles([IO.Path]::Combine($env:PS10K_HOME, 'lib'), '*.ps1') | Sort-Object)) {
+    . $ps10kFile
 }
-if (Test-Path -LiteralPath $global:PS10K_CUSTOM) {
-    foreach ($ps10kFile in @(Get-ChildItem -LiteralPath $global:PS10K_CUSTOM -Filter '*.ps1' -File | Sort-Object Name)) {
-        . $ps10kFile.FullName
-    }
+if ([IO.Directory]::Exists($global:PS10K_CUSTOM)) {
+    foreach ($ps10kFile in @([IO.Directory]::GetFiles($global:PS10K_CUSTOM, '*.ps1') | Sort-Object)) { . $ps10kFile }
 }
 
 _ps10k_load_config
