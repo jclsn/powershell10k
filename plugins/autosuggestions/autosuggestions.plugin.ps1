@@ -57,7 +57,7 @@ function global:_ps10k_menu_fits([string]$Line, [int]$Cursor) {
     $lines + 1 + (_ps10k_menu_rows $items $ui.BufferSize.Width) -le $ui.WindowSize.Height
 }
 
-. (Join-Path $PSScriptRoot 'completion-grid.ps1')
+. ([IO.Path]::Combine($PSScriptRoot, 'completion-grid.ps1'))
 
 # Tab and Shift+Tab: powershell10k's completion grid; in-place cycling when the
 # grid does not fit; PSReadLine's menu when the grid cannot run.
@@ -88,7 +88,7 @@ function global:_ps10k_tab_complete($Key, $Arg, [bool]$Backward) {
         _ps10k_with_ctrl_c_as_key { [Microsoft.PowerShell.PSConsoleReadLine]::MenuComplete($Key, $Arg) }
     }
     # The completed line skipped syntax-highlighting's key handlers.
-    if (Get-Command _ps10k_hl_refresh -ErrorAction Ignore) { _ps10k_hl_refresh $before }
+    if (${function:_ps10k_hl_refresh}) { _ps10k_hl_refresh $before }
 }
 
 if (Get-Module PSReadLine) {

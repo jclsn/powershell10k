@@ -45,6 +45,10 @@ Set-PSReadLineOption -Colors @{
     Selection = "$ps10kE[7m"
 }
 Remove-Variable -Name ps10kE -ErrorAction SilentlyContinue
+# The colors just set are those of an empty line, so the first prompt's
+# update has nothing to change.
+$global:PS10K_HL.Current = "$($global:PS10K_HL.Valid)|False|False"
+$global:PS10K_HL.LastValid = $true
 
 # Get-Command also reports documents (.\notes.md opens in its app) as
 # applications; only files Windows executes count.
@@ -203,17 +207,16 @@ function global:_ps10k_hl_buffer {
 
 # Characters that can change a command name. The color is set before the key
 # is applied so PSReadLine's own render already uses it.
-$ps10kChars = @([char[]]'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') + @('-', '_', '.')
-foreach ($ps10kChar in $ps10kChars) {
-    Set-PSReadLineKeyHandler -Chord "$ps10kChar" -BriefDescription 'PS10kHighlightInsert' -ScriptBlock {
-        param($key, $arg)
-        try {
-            $b = _ps10k_hl_buffer
-            [void](_ps10k_hl_update $b.Line.Insert($b.Cursor, [string]$key.KeyChar))
-        }
-        catch { }
-        [Microsoft.PowerShell.PSConsoleReadLine]::SelfInsert($key, $arg)
+# One call for all of them: each Set-PSReadLineKeyHandler call costs about 2 ms.
+$ps10kChars = [string[]](@([char[]]'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') + @('-', '_', '.'))
+Set-PSReadLineKeyHandler -Chord $ps10kChars -BriefDescription 'PS10kHighlightInsert' -ScriptBlock {
+    param($key, $arg)
+    try {
+        $b = _ps10k_hl_buffer
+        [void](_ps10k_hl_update $b.Line.Insert($b.Cursor, [string]$key.KeyChar))
     }
+    catch { }
+    [Microsoft.PowerShell.PSConsoleReadLine]::SelfInsert($key, $arg)
 }
 
 Set-PSReadLineKeyHandler -Key Backspace -BriefDescription 'PS10kHighlightBackspace' -ScriptBlock {
@@ -251,11 +254,22 @@ $ps10kBindable = New-Object 'System.Collections.Generic.HashSet[string]'
 foreach ($ps10kMethod in [Microsoft.PowerShell.PSConsoleReadLine].GetMethods()) {
     if ($ps10kMethod.IsStatic -and $ps10kMethod.GetParameters().Count -eq 2) { [void]$ps10kBindable.Add($ps10kMethod.Name) }
 }
+# Bound keys grouped by function and vi table, so each group is one
+# Set-PSReadLineKeyHandler call. Command mode keys are listed as <key>.
+$ps10kGroups = [ordered]@{}
 foreach ($ps10kBound in @(Get-PSReadLineKeyHandler -Bound)) {
     $ps10kFunction = $ps10kBound.Function
     if ($ps10kFunction -like 'PS10k*' -or $ps10kFunction -notmatch '^[A-Za-z]+$') { continue }
     if ($ps10kReplaceKeys -notcontains $ps10kBound.Key -and $ps10kFunction -notmatch $ps10kShortening) { continue }
     if (-not $ps10kBindable.Contains($ps10kFunction)) { continue }
+    $ps10kCommandMode = $ps10kBound.Key -match '^<(.+)>$'
+    $ps10kChord = if ($ps10kCommandMode) { $Matches[1] } else { $ps10kBound.Key }
+    $ps10kGroup = "$ps10kCommandMode|$ps10kFunction"
+    if (-not $ps10kGroups.Contains($ps10kGroup)) { $ps10kGroups[$ps10kGroup] = New-Object System.Collections.ArrayList }
+    [void]$ps10kGroups[$ps10kGroup].Add($ps10kChord)
+}
+foreach ($ps10kGroup in $ps10kGroups.Keys) {
+    $ps10kCommandMode, $ps10kFunction = $ps10kGroup -split '\|'
     $ps10kNoEmphasis = if ($ps10kHistory -contains $ps10kFunction) { '$true' } else { '$false' }
     $ps10kHandler = [scriptblock]::Create(@"
 param(`$key, `$arg)
@@ -263,11 +277,8 @@ param(`$key, `$arg)
 _ps10k_with_ctrl_c_as_key { [Microsoft.PowerShell.PSConsoleReadLine]::$ps10kFunction(`$key, `$arg) }
 _ps10k_hl_refresh `$old $ps10kNoEmphasis
 "@)
-    # Command mode keys are listed as <key> (vi-mode).
-    $ps10kCommandMode = $ps10kBound.Key -match '^<(.+)>$'
-    $ps10kChord = if ($ps10kCommandMode) { $Matches[1] } else { $ps10kBound.Key }
-    $ps10kArgs = @{ Chord = $ps10kChord; BriefDescription = "PS10k$ps10kFunction"; ScriptBlock = $ps10kHandler }
-    if ($ps10kCommandMode) { $ps10kArgs.ViMode = 'Command' }
+    $ps10kArgs = @{ Chord = [string[]]$ps10kGroups[$ps10kGroup]; BriefDescription = "PS10k$ps10kFunction"; ScriptBlock = $ps10kHandler }
+    if ($ps10kCommandMode -eq 'True') { $ps10kArgs.ViMode = 'Command' }
     try { Set-PSReadLineKeyHandler @ps10kArgs } catch { }
 }
 
@@ -281,7 +292,7 @@ $global:PS10K_HL.Archives = @('.zip', '.7z', '.rar', '.tar', '.gz', '.tgz', '.bz
 # The folder segment's color: its background in rainbow style (white text on
 # blue), its text color in the other styles.
 function global:_ps10k_hl_folder_color {
-    if (Get-Command _ps10k_segment_colors -ErrorAction Ignore) {
+    if (${function:_ps10k_segment_colors}) {
         $colors = _ps10k_segment_colors @{ Name = 'dir' }
         $color = if ($global:P10K.Style -eq 'rainbow' -and $null -ne $colors.Bg) { $colors.Bg } else { $colors.Fg }
         if ($null -ne $color) { return (_ps10k_fg $color) }
@@ -369,4 +380,4 @@ Add-PS10kHook -Type precmd -Action {
 Add-PS10kHook -Type preexec -Action { [void](_ps10k_hl_apply ([bool]$global:PS10K_HL.LastValid) $false $false) }
 _ps10k_bind_accept_line
 
-Remove-Variable -Name ps10kChars, ps10kChar, ps10kBound, ps10kFunction, ps10kHandler, ps10kReplaceKeys, ps10kHistory, ps10kShortening, ps10kNoEmphasis, ps10kCommandMode, ps10kChord, ps10kArgs, ps10kBindable, ps10kMethod -ErrorAction SilentlyContinue
+Remove-Variable -Name ps10kChars, ps10kBound, ps10kFunction, ps10kHandler, ps10kReplaceKeys, ps10kHistory, ps10kShortening, ps10kNoEmphasis, ps10kCommandMode, ps10kChord, ps10kArgs, ps10kBindable, ps10kMethod, ps10kGroups, ps10kGroup -ErrorAction SilentlyContinue

@@ -211,7 +211,7 @@ function global:_ps10k_grid_clear($Grid) {
 function global:_ps10k_grid_apply($Grid, [string]$Text) {
     $line = $null; $cursor = $null
     [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
-    $highlight = [bool](Get-Command _ps10k_hl_update -ErrorAction Ignore)
+    $highlight = [bool]${function:_ps10k_hl_update}
     if ($highlight) {
         try { [void](_ps10k_hl_update ($line.Remove($Grid.Start, $Grid.Length).Insert($Grid.Start, $Text))) } catch { }
     }
@@ -225,7 +225,7 @@ function global:_ps10k_grid_apply($Grid, [string]$Text) {
 # turned into sets once instead of once per entry.
 function global:_ps10k_grid_colors($Results, [string[]]$Items) {
     $colors = New-Object string[] $Results.Count
-    if (-not (Get-Command _ps10k_hl_folder_color -ErrorAction Ignore)) { return , $colors }
+    if (-not ${function:_ps10k_hl_folder_color}) { return , $colors }
     $folderColor = _ps10k_hl_folder_color
     $ignoreCase = [StringComparer]::OrdinalIgnoreCase
     $executables = New-Object 'System.Collections.Generic.HashSet[string]' $ignoreCase

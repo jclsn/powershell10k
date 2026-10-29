@@ -36,9 +36,12 @@ function global:_ps10k_vi_cursor([string]$Mode) {
     [Console]::Write("$([char]27)[$([int]$shape) q")
 }
 
+# Runs on every prompt; Set-PSReadLineOption only when the text changes.
 function global:_ps10k_vi_prompt_text([string]$Mode) {
     $icon = if ($Mode -eq 'Command') { 'prompt_vicmd' } else { 'prompt' }
-    try { Set-PSReadLineOption -PromptText ((_ps10k_icon $icon) + ' ') } catch { }
+    $text = (_ps10k_icon $icon) + ' '
+    if (((Get-PSReadLineOption).PromptText -join '') -eq $text) { return }
+    try { Set-PSReadLineOption -PromptText $text } catch { }
 }
 
 function global:_ps10k_vi_mode_changed($Mode) {
@@ -49,7 +52,7 @@ function global:_ps10k_vi_mode_changed($Mode) {
     # Command mode edits (x, dd, u, p, ...) bypass syntax-highlighting's key
     # handlers, so the command color is refreshed on every mode switch.
     $recolor = $false
-    $highlight = [bool](Get-Command _ps10k_hl_update -ErrorAction SilentlyContinue)
+    $highlight = [bool]${function:_ps10k_hl_update}
     # The line as the highlighter last saw it: cw, cc, C and similar shorten it
     # without passing through a wrappable key handler.
     $previous = if ($highlight) { $global:PS10K_HL.LastLine } else { $null }
