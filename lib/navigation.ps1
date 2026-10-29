@@ -7,7 +7,4 @@ function global:_ps10k_cd {
     Set-Location @args
 }
 
-# cd is an AllScope alias in Windows PowerShell, copied into every scope, so it
-# is repointed both here and globally instead of removed.
-Set-Alias -Name cd -Value _ps10k_cd -Option AllScope -Force
-Set-Alias -Name cd -Value _ps10k_cd -Option AllScope -Force -Scope Global
+_ps10k_set_alias cd _ps10k_cd
