@@ -17,8 +17,9 @@ function global:take([Parameter(Mandatory)][string]$Path) {
 }
 Set-Alias -Name mkcd -Value take -Scope Global
 
+# touch a b and touch a, b: a comma list arrives as one array argument.
 function global:touch {
-    foreach ($path in $args) {
+    foreach ($path in @($args | ForEach-Object { $_ })) {
         if (Test-Path -LiteralPath $path) { (Get-Item -LiteralPath $path).LastWriteTime = Get-Date }
         else { New-Item -ItemType File -Path $path | Out-Null }
     }

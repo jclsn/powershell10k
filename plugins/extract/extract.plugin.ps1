@@ -14,7 +14,11 @@ function global:extract {
         switch -Regex ($name) {
             '\.(zip|jar|war|nupkg)$' { Expand-Archive -LiteralPath $item.FullName -DestinationPath $dest -Force; break }
             '\.(tar(\.(gz|bz2|xz|zst))?|tgz|tbz2?|txz)$' {
-                tar -xf $item.FullName -C $dest
+                # Windows' own bsdtar: Git's GNU tar, often earlier on PATH,
+                # reads C:\... as host:path and fails.
+                $windowsTar = Join-Path $env:SystemRoot 'System32\tar.exe'
+                $tar = if (Test-Path -LiteralPath $windowsTar) { $windowsTar } else { 'tar' }
+                & $tar -xf $item.FullName -C $dest
                 break
             }
             default {
