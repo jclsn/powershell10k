@@ -70,7 +70,7 @@ function global:_ps10k_tab_complete($Key, $Arg, [bool]$Backward) {
     $outcome = 'cycle'
     if (-not $cycling) {
         $global:_ps10k_tab_cycle = $null
-        try { $outcome = _ps10k_with_ctrl_c_as_key { _ps10k_grid_complete $line $cursor $Backward } }
+        try { $outcome = _ps10k_with_readline_input { _ps10k_grid_complete $line $cursor $Backward } }
         catch { $outcome = 'menu' }
     }
     if ($outcome -eq 'menu') {
@@ -85,7 +85,7 @@ function global:_ps10k_tab_complete($Key, $Arg, [bool]$Backward) {
         $global:_ps10k_tab_cycle = $line
     }
     elseif ($outcome -eq 'psreadline') {
-        _ps10k_with_ctrl_c_as_key { [Microsoft.PowerShell.PSConsoleReadLine]::MenuComplete($Key, $Arg) }
+        _ps10k_with_readline_input { [Microsoft.PowerShell.PSConsoleReadLine]::MenuComplete($Key, $Arg) }
     }
     # The completed line skipped syntax-highlighting's key handlers.
     if (${function:_ps10k_hl_refresh}) { _ps10k_hl_refresh $before }

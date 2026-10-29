@@ -58,7 +58,7 @@ function global:_ps10k_accept_line {
 # are on. Functions with their own key loop, such as the completion menu, need
 # PSReadLine's own mode, which its internal CallUsingOurInputMode restores.
 # Without it (older PSReadLine), at least Ctrl+c is turned into a key.
-function global:_ps10k_with_ctrl_c_as_key([scriptblock]$Action) {
+function global:_ps10k_with_readline_input([scriptblock]$Action) {
     $platform = [Microsoft.PowerShell.PSConsoleReadLine].Assembly.GetType('PlatformWindows')
     $method = if ($platform) { $platform.GetMethod('CallUsingOurInputMode', [Reflection.BindingFlags]'NonPublic, Static') }
     if ($method) {

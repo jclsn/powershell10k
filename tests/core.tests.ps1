@@ -48,8 +48,6 @@ Test-Case 'colors reject unknown values and strip escape sequences' {
     Assert-Equal 'abc' (_ps10k_strip_ansi "$([char]27)[1ma$([char]27)[38;2;1;2;3mb$([char]27)]9;9;`"x`"$([char]27)\c")
     Assert-Equal '' (_ps10k_strip_ansi $null)
     Assert-Equal ([string][char]0x276F) (_ps10k_u 0x276F)
-    Assert-True (_ps10k_is_wide 0x4E2D) 'CJK is wide'
-    Assert-True (-not (_ps10k_is_wide 0x41)) 'A is narrow'
 }
 
 Test-Case 'config defaults and ~/.p10k.ps1 overrides' {
@@ -177,7 +175,7 @@ Test-Case 'PSReadLine helpers work outside a running prompt' {
     _ps10k_bind_accept_line
     $enter = Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -eq 'Enter' } | Select-Object -First 1
     Assert-Equal 'PS10kAcceptLine' $enter.Function
-    Assert-Equal 'got x' (_ps10k_with_ctrl_c_as_key { 'got x' })
+    Assert-Equal 'got x' (_ps10k_with_readline_input { 'got x' })
 }
 
 Test-Case 'ps10k and p10k commands' {

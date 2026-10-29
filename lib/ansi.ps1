@@ -45,21 +45,10 @@ function global:_ps10k_strip_ansi([string]$Text) {
     $Text -replace $global:PS10K_ANSI_PATTERN, ''
 }
 
-function global:_ps10k_is_wide([int]$cp) {
-    ($cp -ge 0x1100 -and $cp -le 0x115F) -or
-    ($cp -ge 0x2E80 -and $cp -le 0xA4CF) -or
-    ($cp -ge 0xAC00 -and $cp -le 0xD7A3) -or
-    ($cp -ge 0xF900 -and $cp -le 0xFAFF) -or
-    ($cp -ge 0xFE30 -and $cp -le 0xFE4F) -or
-    ($cp -ge 0xFF00 -and $cp -le 0xFF60) -or
-    ($cp -ge 0xFFE0 -and $cp -le 0xFFE6) -or
-    ($cp -ge 0x1F300 -and $cp -le 0x1F64F) -or
-    ($cp -ge 0x1F900 -and $cp -le 0x1F9FF) -or
-    ($cp -ge 0x20000 -and $cp -le 0x3FFFD)
-}
-
-# The ranges of _ps10k_is_wide as UTF-16, so whole strings can be counted at
-# once (astral ranges as surrogate pairs).
+# Characters that take two terminal columns: Hangul Jamo, CJK and Yi,
+# Hangul syllables, CJK compatibility, fullwidth forms, emoji (1F300-1F64F,
+# 1F900-1F9FF) and CJK extensions (20000-3FFFD), the last ones as UTF-16
+# surrogate pairs. {0} is a backslash: the file stays ASCII.
 $global:PS10K_WIDE_PATTERN = ('[{0}u1100-{0}u115F{0}u2E80-{0}uA4CF{0}uAC00-{0}uD7A3{0}uF900-{0}uFAFF{0}uFE30-{0}uFE4F{0}uFF00-{0}uFF60{0}uFFE0-{0}uFFE6]' +
     '|{0}uD83C[{0}uDF00-{0}uDFFF]|{0}uD83D[{0}uDC00-{0}uDE4F]|{0}uD83E[{0}uDD00-{0}uDDFF]|[{0}uD840-{0}uD8BF][{0}uDC00-{0}uDFFF]') -f [char]92
 
