@@ -30,6 +30,21 @@ function global:_ps10k_rl_internals {
     catch { $null }
 }
 
+# Switches off PSReadLine's emphasis (the part of a history entry that matched
+# what you typed, drawn in the Emphasis color instead of its token colors).
+# Returns $true when there was one, so the caller can redraw.
+function global:_ps10k_rl_clear_emphasis {
+    try {
+        $type = [Microsoft.PowerShell.PSConsoleReadLine]
+        $field = $type.GetField('_emphasisLength', [Reflection.BindingFlags]'NonPublic, Instance')
+        $singleton = $type.GetField('_singleton', [Reflection.BindingFlags]'NonPublic, Static').GetValue($null)
+        if (-not $field -or -not $singleton -or [int]$field.GetValue($singleton) -eq 0) { return $false }
+        $field.SetValue($singleton, 0)
+        $true
+    }
+    catch { $false }
+}
+
 # Screen position just after the last character of the command line.
 function global:_ps10k_rl_end_point($Rl) {
     $point = $Rl.EndOfBuffer.Invoke($Rl.Singleton, @())

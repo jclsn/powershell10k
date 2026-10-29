@@ -123,6 +123,8 @@ function global:_ps10k_hl_analyze([string]$Line) {
 # Sets the Command, Default and String colors for $Line; returns $true when
 # they changed.
 function global:_ps10k_hl_update([string]$Line) {
+    # Remembered for cleanups after edits that cannot be wrapped (vi-mode).
+    $global:PS10K_HL.LastLine = $Line
     $state = _ps10k_hl_analyze $Line
     _ps10k_hl_apply $state.Valid $state.Bare $state.Quoted
 }
@@ -150,8 +152,10 @@ function global:_ps10k_hl_apply([bool]$Valid, [bool]$Bare, [bool]$Quoted) {
 # come out underlined. This writes them again without underline. Only the
 # cells the old line used are touched, so a right prompt on the same row
 # stays.
+# It runs whenever the line got shorter, whatever the underline is now: keys
+# like Up draw the shorter line with the old colors before it is recolored.
 function global:_ps10k_hl_clear_padding([string]$OldLine) {
-    if (-not $global:PS10K_HL.Underlined -or -not $OldLine) { return }
+    if (-not $OldLine) { return }
     try {
         $line = $null; $cursor = $null
         [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
@@ -176,10 +180,13 @@ function global:_ps10k_hl_clear_padding([string]$OldLine) {
 # Recolors after keys that replace the line (history, paste, completion):
 # replacing the buffer with itself re-renders it with the new color.
 # $OldLine is the line before the key, to clear underlined padding.
-function global:_ps10k_hl_refresh([string]$OldLine) {
+# $NoEmphasis drops history search's highlight of the matched part, so the
+# line keeps the colors it would have when typed.
+function global:_ps10k_hl_refresh([string]$OldLine, [bool]$NoEmphasis) {
     try {
         $b = _ps10k_hl_buffer
-        if (_ps10k_hl_update $b.Line) {
+        $redraw = $NoEmphasis -and (_ps10k_rl_clear_emphasis)
+        if ((_ps10k_hl_update $b.Line) -or $redraw) {
             [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $b.Line.Length, $b.Line)
             [Microsoft.PowerShell.PSConsoleReadLine]::SetCursorPosition($b.Cursor)
         }
@@ -231,21 +238,37 @@ Set-PSReadLineKeyHandler -Key Delete -BriefDescription 'PS10kHighlightDelete' -S
     if ($b) { _ps10k_hl_clear_padding $b.Line }
 }
 
-# Keys that replace the whole line (history, paste, completion): run the
-# bound function, then recolor.
-# powershell10k's own handlers (PS10k*, such as the autosuggestions Tab) call
-# _ps10k_hl_refresh themselves.
-foreach ($ps10kKey in 'UpArrow', 'DownArrow', 'Ctrl+v', 'Tab', 'Shift+Tab') {
-    $ps10kBound = Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -eq $ps10kKey } | Select-Object -First 1
-    if (-not $ps10kBound -or $ps10kBound.Function -like 'PS10k*') { continue }
+# Keys that replace or shorten the line bypass the character handlers above:
+# history, paste, completion, word and line deletes, undo, and vi's command
+# mode edits (x, D, dw, cw, p, u, ...). Each is wrapped: run the bound
+# function, then recolor and clean up. powershell10k's own handlers (PS10k*,
+# such as the autosuggestions Tab) do that themselves.
+$ps10kReplaceKeys = @('UpArrow', 'DownArrow', 'Ctrl+v', 'Tab', 'Shift+Tab', '<UpArrow>', '<DownArrow>', '<k>', '<j>')
+$ps10kHistory = @('HistorySearchBackward', 'HistorySearchForward', 'PreviousHistory', 'NextHistory')
+$ps10kShortening = '^(Delete|BackwardDelete|Kill|BackwardKill|UnixWordRubout|Undo|Redo|Paste|Vi(Backward)?Delete|Vi(Backward)?Replace|ViInsertWithDelete|ReplaceChar|BackwardReplaceChar|ForwardDeleteInput)'
+# Bindable functions take (key, arg); some names also have other overloads.
+$ps10kBindable = New-Object 'System.Collections.Generic.HashSet[string]'
+foreach ($ps10kMethod in [Microsoft.PowerShell.PSConsoleReadLine].GetMethods()) {
+    if ($ps10kMethod.IsStatic -and $ps10kMethod.GetParameters().Count -eq 2) { [void]$ps10kBindable.Add($ps10kMethod.Name) }
+}
+foreach ($ps10kBound in @(Get-PSReadLineKeyHandler -Bound)) {
     $ps10kFunction = $ps10kBound.Function
+    if ($ps10kFunction -like 'PS10k*' -or $ps10kFunction -notmatch '^[A-Za-z]+$') { continue }
+    if ($ps10kReplaceKeys -notcontains $ps10kBound.Key -and $ps10kFunction -notmatch $ps10kShortening) { continue }
+    if (-not $ps10kBindable.Contains($ps10kFunction)) { continue }
+    $ps10kNoEmphasis = if ($ps10kHistory -contains $ps10kFunction) { '$true' } else { '$false' }
     $ps10kHandler = [scriptblock]::Create(@"
 param(`$key, `$arg)
 `$old = (_ps10k_hl_buffer).Line
 _ps10k_with_ctrl_c_as_key { [Microsoft.PowerShell.PSConsoleReadLine]::$ps10kFunction(`$key, `$arg) }
-_ps10k_hl_refresh `$old
+_ps10k_hl_refresh `$old $ps10kNoEmphasis
 "@)
-    Set-PSReadLineKeyHandler -Chord $ps10kKey -BriefDescription "PS10k$ps10kFunction" -ScriptBlock $ps10kHandler
+    # Command mode keys are listed as <key> (vi-mode).
+    $ps10kCommandMode = $ps10kBound.Key -match '^<(.+)>$'
+    $ps10kChord = if ($ps10kCommandMode) { $Matches[1] } else { $ps10kBound.Key }
+    $ps10kArgs = @{ Chord = $ps10kChord; BriefDescription = "PS10k$ps10kFunction"; ScriptBlock = $ps10kHandler }
+    if ($ps10kCommandMode) { $ps10kArgs.ViMode = 'Command' }
+    try { Set-PSReadLineKeyHandler @ps10kArgs } catch { }
 }
 
 # Completion grid colors, like ls colors: folders in the prompt's folder color,
@@ -346,4 +369,4 @@ Add-PS10kHook -Type precmd -Action {
 Add-PS10kHook -Type preexec -Action { [void](_ps10k_hl_apply ([bool]$global:PS10K_HL.LastValid) $false $false) }
 _ps10k_bind_accept_line
 
-Remove-Variable -Name ps10kChars, ps10kChar, ps10kKey, ps10kBound, ps10kFunction, ps10kHandler -ErrorAction SilentlyContinue
+Remove-Variable -Name ps10kChars, ps10kChar, ps10kBound, ps10kFunction, ps10kHandler, ps10kReplaceKeys, ps10kHistory, ps10kShortening, ps10kNoEmphasis, ps10kCommandMode, ps10kChord, ps10kArgs, ps10kBindable, ps10kMethod -ErrorAction SilentlyContinue
