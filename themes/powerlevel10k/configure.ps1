@@ -77,6 +77,95 @@ function global:_ps10k_wizard_config_text($Answers) {
     $lines -join [Environment]::NewLine
 }
 
+# One question answered by picking an option: each option is previewed with
+# the answers so far, then the chosen value is returned. Without $Labels the
+# values are the labels ('lean' becomes 'Lean.').
+function global:_ps10k_wizard_pick($Answers, [string]$Question, [string]$Key, $Options, $Labels) {
+    _ps10k_wizard_header $Question
+    foreach ($option in $Options.Keys) {
+        $Answers[$Key] = $Options[$option]
+        $label = if ($Labels) { $Labels[$option] } else { (Get-Culture).TextInfo.ToTitleCase("$($Options[$option])") + '.' }
+        _ps10k_wizard_preview $Answers "($option) $label"
+    }
+    $Options[(_ps10k_wizard_key @($Options.Keys))]
+}
+
+# A yes/no question below some lines of explanation.
+function global:_ps10k_wizard_yes([string]$Question, [string[]]$Lines, [string]$No = 'No.') {
+    _ps10k_wizard_header $Question
+    foreach ($line in $Lines) { Write-Host $line }
+    Write-Host '    (y) Yes.'
+    Write-Host "    (n) $No"
+    (_ps10k_wizard_key 'y', 'n') -eq 'y'
+}
+
+# Nerd Font glyphs, plain Unicode or ASCII, depending on what the font shows.
+function global:_ps10k_wizard_glyphs($Answers) {
+    $diamond = "                --->  $(_ps10k_u 0xE0B2)$(_ps10k_u 0xE0B0)  <---"
+    if (_ps10k_wizard_yes 'Does this look like a diamond (rotated square)?' @($diamond, '')) { $Answers.Mode = 'nerdfont'; return }
+    $marks = @(
+        "                --->  $(_ps10k_u 0x2714) $(_ps10k_u 0x2718)  <---"
+        ''
+        '    Tip: install.ps1 installs JetBrainsMono Nerd Font and selects it in'
+        '    Windows Terminal. Restart the terminal after installing.'
+        ''
+    )
+    $Answers.Mode = if (_ps10k_wizard_yes 'Do these look like a check mark and a cross?' $marks) { 'unicode' } else { 'ascii' }
+}
+
+# Whether the right side shows the time, and in which format.
+function global:_ps10k_wizard_time($Answers) {
+    _ps10k_wizard_header 'Show current time?'
+    $times = [ordered]@{ 'n' = $null; '1' = 'HH:mm:ss'; '2' = 'hh:mm:ss tt' }
+    $labels = @{ 'n' = 'No.'; '1' = '24-hour format.'; '2' = '12-hour format.' }
+    $withTime = (_ps10k_default_config).RightSegments
+    $withoutTime = @($withTime | Where-Object { $_ -ne 'time' })
+    foreach ($option in $times.Keys) {
+        if ($times[$option]) { $Answers.TimeFormat = $times[$option]; $Answers.RightSegments = $withTime }
+        else { $Answers.RightSegments = $withoutTime }
+        _ps10k_wizard_preview $Answers "($option) $($labels[$option])"
+    }
+    $choice = _ps10k_wizard_key @($times.Keys)
+    if ($times[$choice]) { $Answers.TimeFormat = $times[$choice]; $Answers.RightSegments = $withTime }
+    else { $Answers.Remove('TimeFormat'); $Answers.RightSegments = $withoutTime }
+}
+
+# All questions in order; returns the answers.
+function global:_ps10k_wizard_ask {
+    $a = [ordered]@{}
+    _ps10k_wizard_glyphs $a
+    $a.Style = _ps10k_wizard_pick $a 'Prompt style' 'Style' ([ordered]@{ '1' = 'lean'; '2' = 'classic'; '3' = 'rainbow'; '4' = 'pure' })
+    if ($a.Mode -eq 'nerdfont' -and $a.Style -in 'rainbow', 'classic') {
+        $a.Heads = _ps10k_wizard_pick $a 'Prompt heads' 'Heads' ([ordered]@{ '1' = 'sharp'; '2' = 'round'; '3' = 'slanted' })
+    }
+    _ps10k_wizard_time $a
+    $a.MultiLine = _ps10k_wizard_pick $a 'Prompt height' 'MultiLine' ([ordered]@{ '1' = $false; '2' = $true }) @{ '1' = 'One line.'; '2' = 'Two lines.' }
+    if ($a.MultiLine) {
+        $gaps = [ordered]@{ '1' = 'none'; '2' = 'dot'; '3' = 'line' }
+        $a.Gap = _ps10k_wizard_pick $a 'Prompt connection' 'Gap' $gaps @{ '1' = 'Disconnected.'; '2' = 'Dotted.'; '3' = 'Solid.' }
+        $a.Frame = _ps10k_wizard_pick $a 'Prompt frame' 'Frame' ([ordered]@{ 'n' = $false; 'y' = $true }) @{ 'n' = 'No frame.'; 'y' = 'Left frame.' }
+    }
+    _ps10k_wizard_header 'Prompt spacing'
+    Write-Host '    (1) Compact: no empty line between prompts.'
+    Write-Host '    (2) Sparse: an empty line before each prompt.'
+    $a.EmptyLineBefore = (_ps10k_wizard_key '1', '2') -eq '2'
+
+    $saved = $global:P10K; $global:P10K = _ps10k_wizard_config $a
+    $promptChar = _ps10k_prompt_char $true
+    $global:P10K = $saved
+    $example = @('    Previous prompts collapse to just the prompt character,', '    which keeps the scrollback tidy:', '', "    $($promptChar)git status", "    $($promptChar)ls", '')
+    $a.TransientPrompt = _ps10k_wizard_yes 'Enable transient prompt?' $example
+    $a
+}
+
+# Saves $Answers to the config file (the old one is kept as .bak) and loads it.
+function global:_ps10k_wizard_save($Answers, [string]$Path) {
+    if (Test-Path -LiteralPath $Path) { Copy-Item -LiteralPath $Path -Destination "$Path.bak" -Force }
+    Set-Content -LiteralPath $Path -Value (_ps10k_wizard_config_text $Answers) -Encoding UTF8
+    _ps10k_load_config
+    _ps10k_setup_psreadline
+}
+
 function global:_ps10k_configure {
     if (-not (_ps10k_can_prompt)) {
         Write-Error 'p10k configure needs an interactive console.'
@@ -84,105 +173,14 @@ function global:_ps10k_configure {
     }
     while ($true) {
         try {
-            $a = [ordered]@{}
-
-            _ps10k_wizard_header 'Does this look like a diamond (rotated square)?'
-            Write-Host "                --->  $(_ps10k_u 0xE0B2)$(_ps10k_u 0xE0B0)  <---"
-            Write-Host ''
-            Write-Host '    (y) Yes.'
-            Write-Host '    (n) No.'
-            if ((_ps10k_wizard_key 'y', 'n') -eq 'y') { $a.Mode = 'nerdfont' }
-            else {
-                _ps10k_wizard_header 'Do these look like a check mark and a cross?'
-                Write-Host "                --->  $(_ps10k_u 0x2714) $(_ps10k_u 0x2718)  <---"
-                Write-Host ''
-                Write-Host '    (y) Yes.'
-                Write-Host '    (n) No.'
-                Write-Host ''
-                Write-Host '    Tip: install.ps1 installs JetBrainsMono Nerd Font and selects it in' -ForegroundColor DarkGray
-                Write-Host '    Windows Terminal. Restart the terminal after installing.' -ForegroundColor DarkGray
-                $a.Mode = if ((_ps10k_wizard_key 'y', 'n') -eq 'y') { 'unicode' } else { 'ascii' }
-            }
-
-            _ps10k_wizard_header 'Prompt style'
-            $styles = [ordered]@{ '1' = 'lean'; '2' = 'classic'; '3' = 'rainbow'; '4' = 'pure' }
-            foreach ($k in $styles.Keys) {
-                $a.Style = $styles[$k]
-                _ps10k_wizard_preview $a "($k) $((Get-Culture).TextInfo.ToTitleCase($styles[$k]))."
-            }
-            $a.Style = $styles[(_ps10k_wizard_key @($styles.Keys))]
-
-            if ($a.Mode -eq 'nerdfont' -and $a.Style -in 'rainbow', 'classic') {
-                _ps10k_wizard_header 'Prompt heads'
-                $heads = [ordered]@{ '1' = 'sharp'; '2' = 'round'; '3' = 'slanted' }
-                foreach ($k in $heads.Keys) {
-                    $a.Heads = $heads[$k]
-                    _ps10k_wizard_preview $a "($k) $((Get-Culture).TextInfo.ToTitleCase($heads[$k]))."
-                }
-                $a.Heads = $heads[(_ps10k_wizard_key @($heads.Keys))]
-            }
-
-            _ps10k_wizard_header 'Show current time?'
-            $times = [ordered]@{ 'n' = $null; '1' = 'HH:mm:ss'; '2' = 'hh:mm:ss tt' }
-            $labels = @{ 'n' = 'No.'; '1' = '24-hour format.'; '2' = '12-hour format.' }
-            $segmentsWithTime = (_ps10k_default_config).RightSegments
-            foreach ($k in $times.Keys) {
-                if ($times[$k]) { $a.TimeFormat = $times[$k]; $a.RightSegments = $segmentsWithTime }
-                else { $a.RightSegments = @($segmentsWithTime | Where-Object { $_ -ne 'time' }) }
-                _ps10k_wizard_preview $a "($k) $($labels[$k])"
-            }
-            $choice = _ps10k_wizard_key @($times.Keys)
-            if ($times[$choice]) { $a.TimeFormat = $times[$choice]; $a.RightSegments = $segmentsWithTime }
-            else { $a.Remove('TimeFormat'); $a.RightSegments = @($segmentsWithTime | Where-Object { $_ -ne 'time' }) }
-
-            _ps10k_wizard_header 'Prompt height'
-            $a.MultiLine = $false; _ps10k_wizard_preview $a '(1) One line.'
-            $a.MultiLine = $true; _ps10k_wizard_preview $a '(2) Two lines.'
-            $a.MultiLine = (_ps10k_wizard_key '1', '2') -eq '2'
-
-            if ($a.MultiLine) {
-                _ps10k_wizard_header 'Prompt connection'
-                $gaps = [ordered]@{ '1' = 'none'; '2' = 'dot'; '3' = 'line' }
-                $gapLabels = @{ '1' = 'Disconnected.'; '2' = 'Dotted.'; '3' = 'Solid.' }
-                foreach ($k in $gaps.Keys) { $a.Gap = $gaps[$k]; _ps10k_wizard_preview $a "($k) $($gapLabels[$k])" }
-                $a.Gap = $gaps[(_ps10k_wizard_key @($gaps.Keys))]
-
-                _ps10k_wizard_header 'Prompt frame'
-                $a.Frame = $false; _ps10k_wizard_preview $a '(n) No frame.'
-                $a.Frame = $true; _ps10k_wizard_preview $a '(y) Left frame.'
-                $a.Frame = (_ps10k_wizard_key 'y', 'n') -eq 'y'
-            }
-
-            _ps10k_wizard_header 'Prompt spacing'
-            Write-Host '    (1) Compact: no empty line between prompts.'
-            Write-Host '    (2) Sparse: an empty line before each prompt.'
-            $a.EmptyLineBefore = (_ps10k_wizard_key '1', '2') -eq '2'
-
-            _ps10k_wizard_header 'Enable transient prompt?'
-            Write-Host '    Previous prompts collapse to just the prompt character,'
-            Write-Host '    which keeps the scrollback tidy:'
-            Write-Host ''
-            $saved = $global:P10K; $global:P10K = _ps10k_wizard_config $a
-            $promptChar = _ps10k_prompt_char $true
-            $global:P10K = $saved
-            Write-Host "    $($promptChar)git status"
-            Write-Host "    $($promptChar)ls"
-            Write-Host ''
-            Write-Host '    (y) Yes.'
-            Write-Host '    (n) No.'
-            $a.TransientPrompt = (_ps10k_wizard_key 'y', 'n') -eq 'y'
-
+            $answers = _ps10k_wizard_ask
             $path = _ps10k_config_path
             _ps10k_wizard_header "Save to $($path)?"
-            _ps10k_wizard_preview $a ''
+            _ps10k_wizard_preview $answers ''
             Write-Host '    (y) Yes.'
             Write-Host '    (n) No, and quit.'
             if ((_ps10k_wizard_key 'y', 'n') -ne 'y') { throw 'PS10K_WIZARD_QUIT' }
-
-            if (Test-Path -LiteralPath $path) { Copy-Item -LiteralPath $path -Destination "$path.bak" -Force }
-            Set-Content -LiteralPath $path -Value (_ps10k_wizard_config_text $a) -Encoding UTF8
-            _ps10k_load_config
-            _ps10k_setup_psreadline
+            _ps10k_wizard_save $answers $path
             Clear-Host
             Write-Host "powershell10k: configuration saved to $path. Run " -NoNewline
             Write-Host 'p10k configure' -ForegroundColor Cyan -NoNewline
