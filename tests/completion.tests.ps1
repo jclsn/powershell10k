@@ -109,6 +109,22 @@ Test-Case 'completion grid scrolls when it is taller than the window' {
     Assert-Equal 1 @(_ps10k_grid_lines $small).Count
 }
 
+Test-Case 'grid keys move the selection and wrap around' {
+    function New-Key([ConsoleKey]$Key, [switch]$Shift, [char]$Char = [char]0) { New-Object ConsoleKeyInfo($Char, $Key, $Shift, $false, $false) }
+    # 7 entries in 3 rows: columns 0-2, 3-5, 6
+    $grid = @{ Items = @(1..7); Layout = @{ Rows = 3 }; Selected = 0 }
+    Assert-Equal 1 (_ps10k_grid_move $grid (New-Key Tab))
+    Assert-Equal 6 (_ps10k_grid_move $grid (New-Key Tab -Shift)) 'Shift+Tab wraps to the end'
+    Assert-Equal 6 (_ps10k_grid_move $grid (New-Key UpArrow))
+    Assert-Equal 3 (_ps10k_grid_move $grid (New-Key RightArrow)) 'next column'
+    Assert-Equal 0 (_ps10k_grid_move $grid (New-Key LeftArrow)) 'no column to the left: stays'
+    $grid.Selected = 6
+    Assert-Equal 0 (_ps10k_grid_move $grid (New-Key DownArrow)) 'Down wraps to the start'
+    Assert-Equal 6 (_ps10k_grid_move $grid (New-Key RightArrow)) 'no column to the right: stays'
+    Assert-Equal 3 (_ps10k_grid_move $grid (New-Key LeftArrow))
+    foreach ($key in 'Enter', 'Escape', 'Backspace', 'A') { Assert-Equal -1 (_ps10k_grid_move $grid (New-Key $key)) "$key closes the grid" }
+}
+
 Test-Case 'grid colors match the highlighting rules' {
     $dir = Join-Path $work 'grid-colors'
     New-Item -ItemType Directory -Path (Join-Path $dir 'sub') -Force | Out-Null

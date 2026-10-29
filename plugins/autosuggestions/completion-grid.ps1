@@ -245,6 +245,87 @@ function global:_ps10k_grid_separator([string]$Word) {
     '\'
 }
 
+# The grid state for completion results: what each entry inserts (Texts),
+# shows (Items) and how wide it is, the layout, colors and prepared cells.
+function global:_ps10k_grid_new($Completion, [string]$Line, $Rl, [bool]$Backward) {
+    $results = @($Completion.CompletionMatches)
+    $start = $Completion.ReplacementIndex; $length = $Completion.ReplacementLength
+    $original = $Line.Substring($start, $length)
+    $separator = _ps10k_grid_separator $original
+    # Inline fast paths: function calls cost more than the work for most entries.
+    $texts = @(foreach ($r in $results) {
+        $text = $r.CompletionText
+        if ($r.ResultType -ne 'ProviderContainer' -or -not $text -or $text.EndsWith('\') -or $text.EndsWith('/')) { $text }
+        elseif ($text.EndsWith("'") -or $text.EndsWith('"')) { _ps10k_grid_text $r $separator }
+        else { $text + $separator }
+    })
+    $esc = [char]27
+    $items = @(foreach ($r in $results) {
+        $name = $r.ListItemText
+        if ($name.IndexOf($esc) -ge 0) { _ps10k_strip_ansi $name } else { $name }
+    })
+    $widths = [int[]]@(foreach ($item in $items) {
+        if ($item -cmatch '^[\x20-\x7E]*$') { $item.Length } else { _ps10k_width $item }
+    })
+    $grid = @{
+        Rl = $Rl; Texts = $texts; Items = $items; Widths = $widths; Colors = (_ps10k_grid_colors $results $items)
+        Layout = (_ps10k_grid_layout $items ([Console]::BufferWidth) $widths)
+        Top = $null; Height = 0
+        Start = $start; Length = $length; Original = $original
+        Selected = $(if ($Backward) { $results.Count - 1 } else { 0 })
+    }
+    _ps10k_grid_prepare $grid
+    $grid
+}
+
+# The entry a navigation key selects, or -1 for keys that close the grid.
+# Tab/Down next, Shift+Tab/Up previous (both wrap), Left/Right a column.
+function global:_ps10k_grid_move($Grid, [ConsoleKeyInfo]$Key) {
+    $count = $Grid.Items.Count
+    $rows = $Grid.Layout.Rows
+    $index = $Grid.Selected
+    $shift = ($Key.Modifiers -band [ConsoleModifiers]::Shift) -ne 0
+    switch ($Key.Key) {
+        'Tab' { if ($shift) { return ($index - 1 + $count) % $count } else { return ($index + 1) % $count } }
+        'DownArrow' { return ($index + 1) % $count }
+        'UpArrow' { return ($index - 1 + $count) % $count }
+        'RightArrow' { if ($index + $rows -lt $count) { return $index + $rows } else { return $index } }
+        'LeftArrow' { if ($index - $rows -ge 0) { return $index - $rows } else { return $index } }
+    }
+    -1
+}
+
+# Selects entry $Index: the command line shows it, and only the rows of the
+# old and new selection are redrawn unless the grid scrolled.
+function global:_ps10k_grid_select($Grid, [int]$Index) {
+    if ($Index -eq $Grid.Selected) { return }
+    $rows = $Grid.Layout.Rows
+    $previousRow = $Grid.Selected % $rows
+    $previousOffset = $Grid.Offset
+    $Grid.Selected = $Index
+    _ps10k_grid_scroll_to $Grid
+    _ps10k_grid_apply $Grid $Grid.Texts[$Index]
+    _ps10k_grid_draw_rows $Grid @($previousRow, ($Index % $rows)) $previousOffset
+}
+
+# Closes the grid for a key that is not navigation: Enter accepts, Esc,
+# Backspace and Ctrl+g undo, Ctrl+c cancels the line, and any other character
+# accepts and is typed (a separator right after a folder's is not doubled).
+function global:_ps10k_grid_finish($Grid, [ConsoleKeyInfo]$Key) {
+    $control = ($Key.Modifiers -band [ConsoleModifiers]::Control) -ne 0
+    $alt = ($Key.Modifiers -band [ConsoleModifiers]::Alt) -ne 0
+    if ($Key.Key -eq 'Enter') { return }
+    if ($Key.Key -in 'Escape', 'Backspace' -or ($control -and $Key.Key -eq 'G')) { _ps10k_grid_apply $Grid $Grid.Original; return }
+    _ps10k_grid_clear $Grid
+    if ($control -and $Key.Key -eq 'C') { [Microsoft.PowerShell.PSConsoleReadLine]::CancelLine(); return }
+    if ($control -or $alt -or [int]$Key.KeyChar -lt 32) { return }
+    $current = $Grid.Texts[$Grid.Selected]
+    $typedSeparator = $Key.KeyChar -eq '\' -or $Key.KeyChar -eq '/'
+    if (-not ($typedSeparator -and ($current.EndsWith('\') -or $current.EndsWith('/')))) {
+        [Microsoft.PowerShell.PSConsoleReadLine]::Insert($Key.KeyChar)
+    }
+}
+
 # Completes at the cursor. Returns 'done', 'cycle' (not even a row of the grid
 # fits: cycle in place instead) or 'menu' (internals missing: PSReadLine's menu).
 function global:_ps10k_grid_complete([string]$Line, [int]$Cursor, [bool]$Backward) {
@@ -258,90 +339,27 @@ function global:_ps10k_grid_complete([string]$Line, [int]$Cursor, [bool]$Backwar
     else { TabExpansion2 -inputScript $Line -cursorColumn $Cursor }
     $results = @($completion.CompletionMatches)
     if ($results.Count -eq 0) { [Microsoft.PowerShell.PSConsoleReadLine]::Ding(); return 'done' }
-    $start = $completion.ReplacementIndex; $length = $completion.ReplacementLength
-    $original = $Line.Substring($start, $length)
-    $separator = _ps10k_grid_separator $original
     if ($results.Count -eq 1) {
-        [Microsoft.PowerShell.PSConsoleReadLine]::Replace($start, $length, (_ps10k_grid_text $results[0] $separator))
+        $separator = _ps10k_grid_separator $Line.Substring($completion.ReplacementIndex, $completion.ReplacementLength)
+        [Microsoft.PowerShell.PSConsoleReadLine]::Replace($completion.ReplacementIndex, $completion.ReplacementLength, (_ps10k_grid_text $results[0] $separator))
         return 'done'
     }
-    # Inline fast paths: function calls cost more than the work for most entries.
-    $texts = @(foreach ($r in $results) {
-        $text = $r.CompletionText
-        if ($r.ResultType -ne 'ProviderContainer' -or -not $text -or $text.EndsWith('\') -or $text.EndsWith('/')) { $text }
-        elseif ($text.EndsWith("'") -or $text.EndsWith('"')) { _ps10k_grid_text $r $separator }
-        else { $text + $separator }
-    })
-
-    $esc = [char]27
-    $items = @(foreach ($r in $results) {
-        $name = $r.ListItemText
-        if ($name.IndexOf($esc) -ge 0) { _ps10k_strip_ansi $name } else { $name }
-    })
-    $widths = [int[]]@(foreach ($item in $items) {
-        if ($item -cmatch '^[\x20-\x7E]*$') { $item.Length } else { _ps10k_width $item }
-    })
-    $layout = _ps10k_grid_layout $items ([Console]::BufferWidth) $widths
     $promptTop = [int]$rl.InitialY.GetValue($rl.Singleton) - [int](Get-PSReadLineOption).ExtraPromptLineCount
     $inputRows = (_ps10k_grid_end_row $rl) - $promptTop + 1
     # One spare row: the command line can wrap while the grid is open.
     $available = [Console]::WindowHeight - $inputRows - 1
     if ($available -lt 2) { return 'cycle' }
 
-    $count = $results.Count
-    $grid = @{
-        Rl = $rl; Items = $items; Widths = $widths; Colors = (_ps10k_grid_colors $results $items); Layout = $layout
-        Top = $null; Height = 0
-        Start = $start; Length = $length; Original = $original
-        Selected = $(if ($Backward) { $count - 1 } else { 0 })
-    }
-    _ps10k_grid_prepare $grid
+    $grid = _ps10k_grid_new $completion $Line $rl $Backward
     _ps10k_grid_viewport $grid $available
     try {
-        _ps10k_grid_apply $grid $texts[$grid.Selected]
+        _ps10k_grid_apply $grid $grid.Texts[$grid.Selected]
         _ps10k_grid_draw $grid
         while ($true) {
             $key = [Console]::ReadKey($true)
-            $shift = ($key.Modifiers -band [ConsoleModifiers]::Shift) -ne 0
-            $control = ($key.Modifiers -band [ConsoleModifiers]::Control) -ne 0
-            $alt = ($key.Modifiers -band [ConsoleModifiers]::Alt) -ne 0
-            $next = $grid.Selected
-            switch ($key.Key) {
-                'Tab' { $next = if ($shift) { ($next - 1 + $count) % $count } else { ($next + 1) % $count } }
-                'DownArrow' { $next = ($next + 1) % $count }
-                'UpArrow' { $next = ($next - 1 + $count) % $count }
-                'RightArrow' { if ($next + $layout.Rows -lt $count) { $next += $layout.Rows } }
-                'LeftArrow' { if ($next - $layout.Rows -ge 0) { $next -= $layout.Rows } }
-                'Enter' { return 'done' }
-                'Escape' { _ps10k_grid_apply $grid $grid.Original; return 'done' }
-                'Backspace' { _ps10k_grid_apply $grid $grid.Original; return 'done' }
-                default {
-                    if ($control -and $key.Key -eq 'C') {
-                        _ps10k_grid_clear $grid
-                        [Microsoft.PowerShell.PSConsoleReadLine]::CancelLine()
-                        return 'done'
-                    }
-                    if ($control -and $key.Key -eq 'G') { _ps10k_grid_apply $grid $grid.Original; return 'done' }
-                    if (-not $control -and -not $alt -and [int]$key.KeyChar -ge 32) {
-                        _ps10k_grid_clear $grid
-                        # A typed separator after a folder's added one is not doubled.
-                        $current = $texts[$grid.Selected]
-                        $typedSeparator = $key.KeyChar -eq '\' -or $key.KeyChar -eq '/'
-                        if (-not ($typedSeparator -and ($current.EndsWith('\') -or $current.EndsWith('/')))) {
-                            [Microsoft.PowerShell.PSConsoleReadLine]::Insert($key.KeyChar)
-                        }
-                    }
-                    return 'done'
-                }
-            }
-            if ($next -ne $grid.Selected) {
-                $previousRow = $grid.Selected % $layout.Rows
-                $previousOffset = $grid.Offset
-                $grid.Selected = $next
-                _ps10k_grid_scroll_to $grid
-                _ps10k_grid_apply $grid $texts[$next]
-                _ps10k_grid_draw_rows $grid @($previousRow, ($next % $layout.Rows)) $previousOffset
-            }
+            $next = _ps10k_grid_move $grid $key
+            if ($next -lt 0) { _ps10k_grid_finish $grid $key; return 'done' }
+            _ps10k_grid_select $grid $next
         }
     }
     finally { _ps10k_grid_clear $grid }
