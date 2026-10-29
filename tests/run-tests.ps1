@@ -3,7 +3,13 @@
     Dependency-free test runner for powershell10k.
 .EXAMPLE
     powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-tests.ps1
+.EXAMPLE
+    powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-tests.ps1 -Area git, plugins
 #>
+param(
+    # Only these test files; core always runs because it loads the framework.
+    [string[]]$Area
+)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $work = Join-Path ([IO.Path]::GetTempPath()) ("ps10k-tests-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
@@ -44,9 +50,10 @@ $global:PS10K_THEME = 'powerlevel10k'
 
 # One file per area, in this order: later files rely on the framework the
 # core tests load.
-foreach ($area in 'static', 'core', 'git', 'theme', 'highlighting', 'completion', 'plugins', 'install') {
-    Write-Host $area
-    . (Join-Path $PSScriptRoot "$area.tests.ps1")
+foreach ($name in 'static', 'core', 'git', 'theme', 'highlighting', 'completion', 'plugins', 'install') {
+    if ($Area -and $name -ne 'core' -and $Area -notcontains $name) { continue }
+    Write-Host $name
+    . (Join-Path $PSScriptRoot "$name.tests.ps1")
 }
 
 Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
