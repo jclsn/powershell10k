@@ -64,3 +64,211 @@ Test-Case 'configure writes a config that loads back' {
     Remove-Item -LiteralPath $env:PS10K_CONFIG
     _ps10k_load_config
 }
+
+# Runs a segment like the prompt does, in $Path (a folder or a provider path).
+function Invoke-TestSegment([string]$Name, [string]$Path = $root, [hashtable]$Context = @{}) {
+    Push-Location -LiteralPath $Path
+    try {
+        $ctx = @{ Success = $true; ExitCode = 0; Duration = $null; Location = $executionContext.SessionState.Path.CurrentLocation }
+        foreach ($key in $Context.Keys) { $ctx[$key] = $Context[$key] }
+        & $global:PS10K_SEGMENTS[$Name] $ctx
+    }
+    finally { Pop-Location }
+}
+
+# Runs $Body with a fresh default configuration and restores the old one.
+function Use-TestConfig([scriptblock]$Body) {
+    $saved = $global:P10K
+    try { $global:P10K = _ps10k_default_config; & $Body }
+    finally { $global:P10K = $saved }
+}
+
+Test-Case 'dir segment shortens home, bolds the last folder and handles other drives' {
+    Use-TestConfig {
+        $homeDir = Invoke-TestSegment 'dir' $HOME
+        Assert-Equal '~' $homeDir.Text
+        Assert-Equal 'home' $homeDir.Icon
+        $repo = Invoke-TestSegment 'dir' $root
+        Assert-True ($repo.Text.EndsWith("$($global:PS10K_BOLD)powershell10k$($global:PS10K_NOBOLD)")) 'last folder in bold'
+        Assert-Equal "$env:SystemDrive\" (Invoke-TestSegment 'dir' "$env:SystemDrive\").Text 'drive root keeps its separator'
+        $registry = Invoke-TestSegment 'dir' 'HKCU:\Software'
+        Assert-Equal 'folder' $registry.Icon
+        Assert-True ($registry.Text -match 'HKCU:') 'other providers show their path'
+        $global:P10K.Style = 'pure'
+        Assert-True (-not (Invoke-TestSegment 'dir' $root).Text.Contains($global:PS10K_BOLD)) 'pure style is not bold'
+    }
+}
+
+Test-Case 'status, execution time, jobs and time segments' {
+    Use-TestConfig {
+        Assert-True ($null -eq (Invoke-TestSegment 'status'))
+        $global:P10K.StatusShowOk = $true
+        Assert-Equal 'ok' (Invoke-TestSegment 'status').State
+        $global:P10K.Mode = 'ascii'
+        $failed = Invoke-TestSegment 'status' -Context @{ Success = $false; ExitCode = 3 }
+        Assert-True ($null -eq $failed.Icon) 'ascii mode shows just the code'
+        Assert-Equal '' (Invoke-TestSegment 'status' -Context @{ Success = $false; ExitCode = 0 }).Text 'a failed cmdlet has no exit code'
+        Assert-True ($null -eq (Invoke-TestSegment 'command_execution_time' -Context @{ Duration = [TimeSpan]::FromSeconds(1) })) 'below the threshold'
+        Assert-Equal '5s' (Invoke-TestSegment 'command_execution_time' -Context @{ Duration = [TimeSpan]::FromSeconds(5) }).Text
+        Assert-True ($null -eq (Invoke-TestSegment 'command_execution_time')) 'no command ran'
+        $global:P10K.TimeFormat = 'yyyy'
+        Assert-Equal (Get-Date -Format 'yyyy') (Invoke-TestSegment 'time').Text
+        Assert-True ($null -eq (Invoke-TestSegment 'background_jobs'))
+        $job = Start-Job { Start-Sleep -Seconds 30 }
+        try {
+            while ($job.State -ne 'Running') { Start-Sleep -Milliseconds 50 }
+            Assert-Equal 'jobs' (Invoke-TestSegment 'background_jobs').Icon
+            Assert-Equal '' (Invoke-TestSegment 'background_jobs').Text 'one job shows just the icon'
+        }
+        finally { $job | Remove-Job -Force }
+    }
+}
+
+Test-Case 'environment segments: virtualenv, anaconda, aws and context' {
+    $names = 'VIRTUAL_ENV', 'CONDA_DEFAULT_ENV', 'AWS_VAULT', 'AWS_PROFILE', 'AWS_DEFAULT_PROFILE', 'SSH_CONNECTION', 'SSH_CLIENT'
+    $saved = @{}
+    foreach ($n in $names) { $saved[$n] = [Environment]::GetEnvironmentVariable($n) }
+    try {
+        Use-TestConfig {
+            foreach ($n in $names) { [Environment]::SetEnvironmentVariable($n, $null) }
+            foreach ($segment in 'virtualenv', 'anaconda', 'aws') { Assert-True ($null -eq (Invoke-TestSegment $segment)) "$segment hidden" }
+            $env:VIRTUAL_ENV = 'C:\envs\project-venv'
+            Assert-Equal 'project-venv' (Invoke-TestSegment 'virtualenv').Text
+            $env:CONDA_DEFAULT_ENV = 'base'
+            Assert-Equal 'base' (Invoke-TestSegment 'anaconda').Text
+            $env:AWS_DEFAULT_PROFILE = 'default'; $env:AWS_PROFILE = 'dev'
+            Assert-Equal 'dev' (Invoke-TestSegment 'aws').Text 'AWS_PROFILE wins over the default'
+            $env:AWS_VAULT = 'vault'
+            Assert-Equal 'vault' (Invoke-TestSegment 'aws').Text 'aws-vault wins'
+            if (-not $global:_ps10k_is_admin) {
+                Assert-True ($null -eq (Invoke-TestSegment 'context')) 'hidden locally'
+                $env:SSH_CONNECTION = '1.2.3.4 22 5.6.7.8 22'
+                Assert-Equal 'remote' (Invoke-TestSegment 'context').State
+                Assert-Equal "$env:USERNAME@$env:COMPUTERNAME" (Invoke-TestSegment 'context').Text
+            }
+            $env:SSH_CONNECTION = $null
+            $global:P10K.ContextAlwaysShow = $true
+            Assert-True ($null -ne (Invoke-TestSegment 'context')) 'shown when always on'
+        }
+    }
+    finally { foreach ($n in $names) { [Environment]::SetEnvironmentVariable($n, $saved[$n]) } }
+}
+
+Test-Case 'project segments: node, dotnet and find-up' {
+    $project = Join-Path $work 'project\src'
+    New-Item -ItemType Directory -Path $project -Force | Out-Null
+    Assert-True ($null -eq (_ps10k_find_up $project @('package.json')))
+    Set-Content -LiteralPath (Join-Path $work 'project\package.json') -Value '{}'
+    Assert-Equal (Join-Path $work 'project\package.json') (_ps10k_find_up $project @('nope.txt', 'package.json')) 'found in a parent'
+    Use-TestConfig {
+        Assert-True ($null -eq (Invoke-TestSegment 'node_version' $env:SystemRoot)) 'node only inside a project'
+        if (Get-Command node -CommandType Application -ErrorAction Ignore) {
+            Assert-True ((Invoke-TestSegment 'node_version' $project).Text -match '^\d+\.') 'node version'
+        }
+        Assert-True ($null -eq (Invoke-TestSegment 'dotnet_version' $project)) 'dotnet only next to a project file'
+        Assert-True ($null -eq (Invoke-TestSegment 'node_version' 'HKCU:\Software')) 'not on other providers'
+    }
+}
+
+Test-Case 'segment colors: palette, states and user overrides' {
+    Use-TestConfig {
+        Assert-Equal 4 (_ps10k_segment_colors @{ Name = 'dir' }).Bg 'rainbow folder background'
+        $modified = _ps10k_segment_colors @{ Name = 'git'; State = 'modified' }
+        $clean = _ps10k_segment_colors @{ Name = 'git'; State = 'clean' }
+        Assert-True ("$($modified.Bg)" -ne "$($clean.Bg)") 'states have their own colors'
+        $global:P10K.Colors['dir'] = @{ Fg = 1; Bg = 2 }
+        $dir = _ps10k_segment_colors @{ Name = 'dir' }
+        Assert-Equal '1 2' "$($dir.Fg) $($dir.Bg)" 'user override'
+        Assert-Equal 9 (_ps10k_segment_colors @{ Name = 'custom'; Fg = 9 }).Fg 'segments can bring their own colors'
+        $global:P10K.Style = 'lean'
+        Assert-True ($null -eq (_ps10k_segment_colors @{ Name = 'git' }).Bg) 'lean has no backgrounds'
+        $global:P10K.Style = 'nonsense'
+        Assert-True ($null -ne (_ps10k_palette)) 'unknown styles fall back to rainbow'
+    }
+}
+
+Test-Case 'segments render as powerline or plain text' {
+    Use-TestConfig {
+        $segments = @(
+            @{ Name = 'dir'; Icon = 'folder'; Text = 'a' },
+            @{ Name = 'dir'; Icon = 'folder'; Text = 'b' },
+            @{ Name = 'git'; IconText = '*'; Text = 'main' },
+            @{ Name = 'empty'; Text = '' },
+            $null
+        )
+        $items = _ps10k_prepare_segments $segments
+        Assert-Equal 3 $items.Count 'empty segments are dropped'
+        Assert-Equal '* main' $items[2].Content 'IconText is used as is'
+        $left = _ps10k_strip_ansi (_ps10k_render_powerline $items)
+        Assert-True ($left.Contains([string][char]0xE0B1)) 'same background: thin separator'
+        Assert-True ($left.EndsWith([string][char]0xE0B0)) 'ends with a head'
+        $right = _ps10k_strip_ansi (_ps10k_render_powerline $items -Right)
+        Assert-True ($right.StartsWith([string][char]0xE0B2)) 'right side starts with a head'
+        Assert-Equal '' (_ps10k_render_powerline @())
+        $global:P10K.Style = 'pure'
+        Assert-Equal 'main' (_ps10k_segment_content @{ Name = 'git'; Icon = 'branch'; Text = 'main' }) 'pure has no icons'
+        Assert-Equal 'a b main' (_ps10k_strip_ansi (_ps10k_render_side $segments[0..2])) 'plain styles join with spaces'
+    }
+}
+
+Test-Case 'prompt char, transient prompt and the full prompt' {
+    Use-TestConfig {
+        Assert-True ((_ps10k_prompt_char $true 'Insert') -ne (_ps10k_prompt_char $false 'Insert')) 'success and failure differ in color'
+        Assert-Equal "$([char]0x276E) " (_ps10k_strip_ansi (_ps10k_prompt_char $true 'Command')) 'vi command mode'
+        $global:_ps10k_state.LastSuccess = $true
+        Assert-True ((_ps10k_strip_ansi (_ps10k_transient_prompt)).EndsWith("$([char]0x276F) ")) 'transient prompt is only the prompt char'
+        $text = prompt
+        Assert-True ($text.Contains("$([char]27)]9;9;")) 'reports the folder to Windows Terminal'
+        Assert-True ((_ps10k_strip_ansi $text).StartsWith("`n")) 'empty line before'
+        $global:P10K.ReportCwd = $false
+        Assert-True (-not (prompt).Contains(']9;9;'))
+        Assert-True ((_ps10k_term_width) -gt 0)
+    }
+}
+
+Test-Case 'segment errors are recorded and the prompt falls back when it breaks' {
+    Use-TestConfig {
+        $global:PS10K_SEGMENTS['broken'] = { throw 'segment broke' }
+        try {
+            $results = _ps10k_eval_segments @('broken', 'no-such-segment', 'time') @{}
+            Assert-Equal 1 $results.Count 'broken and unknown segments are skipped'
+            Assert-True ($global:_ps10k_state.Errors['broken'] -match 'segment broke')
+            $global:PS10K_SEGMENTS['broken'] = { @{ Text = 'fixed' } }
+            [void](_ps10k_eval_segments @('broken') @{})
+            Assert-True (-not $global:_ps10k_state.Errors.ContainsKey('broken')) 'error cleared once it works'
+        }
+        finally { $global:PS10K_SEGMENTS.Remove('broken') }
+        $savedRender = ${function:_ps10k_render_prompt}
+        try {
+            Set-Item Function:\global:_ps10k_render_prompt -Value { throw 'render broke' }
+            $global:_ps10k_state.PromptError = $null
+            $text = prompt 6>$null
+            Assert-True ($text -match '^PS .*> $') 'plain fallback prompt'
+            Assert-True ($global:_ps10k_state.PromptError -match 'render broke')
+        }
+        finally { Set-Item Function:\global:_ps10k_render_prompt -Value $savedRender; $global:_ps10k_state.PromptError = $null }
+    }
+}
+
+Test-Case 'wizard builds and previews configurations' {
+    $cfg = _ps10k_wizard_config @{ Style = 'classic'; Heads = 'round' }
+    Assert-Equal 'classic' $cfg.Style
+    Assert-Equal 'round' $cfg.Heads
+    Assert-Equal 'nerdfont' $cfg.Mode 'other keys keep their defaults'
+    $text = _ps10k_wizard_config_text ([ordered]@{ Style = 'lean'; MultiLine = $true; RightSegments = @('time') })
+    Assert-True ($text.Contains("`$P10K.Style = 'lean'"))
+    Assert-True ($text.Contains('$P10K.MultiLine = $true'))
+    Assert-True ($text.Contains("`$P10K.RightSegments = @('time')"))
+    $preview = @(_ps10k_wizard_preview @{ Style = 'rainbow' } 'Label' 6>&1) -join "`n"
+    Assert-True ($preview -match 'Label')
+    Assert-True ($preview -match 'powershell10k') 'sample folder in the preview'
+    Assert-True (-not (_ps10k_can_prompt)) 'no wizard without an interactive console'
+}
+
+Test-Case 'minimal theme renders a one-line prompt' {
+    $script = "`$env:PS10K_HOME = '$root'; `$env:PS10K_CONFIG = '$work\none.ps1'; `$global:PS10K_THEME = 'minimal'; `$global:PS10K_PLUGINS = @(); " +
+        ". '$root\powershell10k.ps1'; Set-Location '$root'; prompt"
+    $out = "$(& powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $script 2>&1)"
+    Assert-True ($out -match 'powershell10k') "folder in the prompt: $out"
+    Assert-True ((_ps10k_strip_ansi $out) -match '> $') 'ends with the prompt char'
+}
