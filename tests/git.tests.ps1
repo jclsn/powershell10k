@@ -61,7 +61,9 @@ Test-Case 'in-progress git actions are detected' {
     New-Item -ItemType Directory -Path $gitDir -Force | Out-Null
     Assert-True ($null -eq (_ps10k_git_action $gitDir)) 'nothing in progress'
     foreach ($case in @(@('BISECT_LOG', 'bisect'), @('REVERT_HEAD', 'revert'), @('CHERRY_PICK_HEAD', 'cherry-pick'), @('MERGE_HEAD', 'merge'), @('rebase-apply', 'rebase'))) {
-        New-Item -ItemType File -Path (Join-Path $gitDir $case[0]) -Force | Out-Null
+        # rebase-apply and rebase-merge are folders, the others files, as git makes them.
+        $type = if ($case[0] -like 'rebase-*') { 'Directory' } else { 'File' }
+        New-Item -ItemType $type -Path (Join-Path $gitDir $case[0]) -Force | Out-Null
         Assert-Equal $case[1] (_ps10k_git_action $gitDir) $case[0]
     }
 }
@@ -120,10 +122,10 @@ Test-Case 'git plugin: branch helpers, aliases and wip commits' {
         Assert-Equal 'develop' (git_develop_branch) 'fallback without a develop branch'
         git branch dev 2>$null
         Assert-Equal 'dev' (git_develop_branch)
-        Assert-Equal 'git add --all @args' (Get-Command gaa).ScriptBlock.ToString()
-        Assert-Equal 'git status @args' (Get-Command gst).ScriptBlock.ToString()
+        Assert-Equal 'git add --all @args' (Get-Command gaa).ScriptBlock.ToString().Trim()
+        Assert-Equal 'git status @args' (Get-Command gst).ScriptBlock.ToString().Trim()
         Assert-Equal '_ps10k_git_gc' (Get-Alias gc).Definition 'the built-in gc alias is repointed'
-        Assert-Equal 'git commit --verbose @args' (Get-Command _ps10k_git_gc).ScriptBlock.ToString()
+        Assert-Equal 'git commit --verbose @args' (Get-Command _ps10k_git_gc).ScriptBlock.ToString().Trim()
         Assert-Equal '_ps10k_git_gc' (& { (Get-Alias gc).Definition }) 'also in nested scopes'
         Assert-Equal 'Alias' (Get-Command gm).CommandType 'gm stays Get-Member'
         Assert-True (Get-Command gcmain -CommandType Function)
