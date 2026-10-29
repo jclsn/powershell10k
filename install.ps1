@@ -355,8 +355,49 @@ function Split-PluginList([string[]]$Names) {
     @($Names | ForEach-Object { $_ -split '[,\s]+' } | Where-Object { $_ })
 }
 
+# Copies (or clones with -RepoUrl) the framework and returns its full path.
+function Install-Framework([string]$Target, [string]$Repo) {
+    if ($Repo) {
+        if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw '-RepoUrl needs git on PATH.' }
+        if (Test-Path -LiteralPath (Join-Path $Target '.git')) { git -C $Target pull --ff-only }
+        else { git clone --depth 1 $Repo $Target }
+        if ($LASTEXITCODE -ne 0) { throw 'git failed' }
+    }
+    else {
+        if (-not $PSScriptRoot) { throw 'Run install.ps1 from a downloaded copy, or pass -RepoUrl to clone.' }
+        Copy-Framework -Source $PSScriptRoot -Target $Target
+    }
+    # Downloaded zips mark files as coming from the internet; RemoteSigned would block them.
+    Get-ChildItem -LiteralPath $Target -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
+    (Resolve-Path -LiteralPath $Target).ProviderPath
+}
+
+# Sets the font (and -NoLogo) in every Windows Terminal settings file.
+function Install-TerminalSettings([string[]]$Paths, [string]$Face, [bool]$NoLogo) {
+    if (-not $Paths) { Write-Info "Windows Terminal settings not found; set the font to $Face yourself."; return }
+    foreach ($path in $Paths) {
+        try {
+            Update-TerminalSettings -Path $path -Face $Face -NoLogo:$NoLogo
+            Write-Info "font$(if ($NoLogo) { ' and -NoLogo' }) set in $path (backup next to it)"
+        }
+        catch { Write-Warn "could not update ${path}: $_" }
+    }
+}
+
+# Writes the powershell10k block into each profile. A plugin list or theme
+# already there is kept unless it was passed explicitly.
+function Install-Profiles([string[]]$Paths, [string]$Home10k, [string]$ThemeName, [string[]]$PluginNames) {
+    $previous = Get-ProfileSettings $Paths
+    if ($previous.Plugins -and $script:ExplicitParameters -notcontains 'Plugins') {
+        $PluginNames = $previous.Plugins
+        Write-Info "keeping your plugins: $($PluginNames -join ', ') (pass -Plugins to change them)"
+    }
+    if ($previous.Theme -and $script:ExplicitParameters -notcontains 'Theme') { $ThemeName = $previous.Theme }
+    $block = Get-ProfileBlock -Home10k $Home10k -ThemeName $ThemeName -PluginNames $PluginNames
+    foreach ($path in $Paths) { Install-ProfileBlock -Path $path -Block $block; Write-Info $path }
+}
+
 function Invoke-Install {
-    $script:Plugins = Split-PluginList $Plugins
     Write-Host ''
     Write-Host 'powershell10k installer (no administrator rights required)' -ForegroundColor Green
     Write-Host ''
@@ -364,60 +405,30 @@ function Invoke-Install {
     if ($PSVersionTable.PSVersion -lt [version]'5.1') { throw "powershell10k needs PowerShell 5.1 or newer (found $($PSVersionTable.PSVersion))." }
 
     Write-Step "Installing framework to $InstallDir"
-    if ($RepoUrl) {
-        if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw '-RepoUrl needs git on PATH.' }
-        if (Test-Path -LiteralPath (Join-Path $InstallDir '.git')) { git -C $InstallDir pull --ff-only }
-        else { git clone --depth 1 $RepoUrl $InstallDir }
-        if ($LASTEXITCODE -ne 0) { throw 'git failed' }
-    }
-    else {
-        if (-not $PSScriptRoot) { throw 'Run install.ps1 from a downloaded copy, or pass -RepoUrl to clone.' }
-        Copy-Framework -Source $PSScriptRoot -Target $InstallDir
-    }
-    # Downloaded zips mark files as coming from the internet; RemoteSigned would block them.
-    Get-ChildItem -LiteralPath $InstallDir -Recurse -File | Unblock-File -ErrorAction SilentlyContinue
-    $InstallDir = (Resolve-Path -LiteralPath $InstallDir).ProviderPath
+    $home10k = Install-Framework $InstallDir $RepoUrl
 
     if (-not $SkipFont) {
         Write-Step "Installing $FontFace font for the current user"
-        try { [void](Install-UserFonts -Source (Join-Path $InstallDir 'fonts')) }
+        try { [void](Install-UserFonts -Source (Join-Path $home10k 'fonts')) }
         catch { Write-Warn "font installation failed: $_" }
     }
-
     if (-not $SkipTerminal) {
         Write-Step 'Configuring Windows Terminal'
         $paths = if ($TerminalSettingsPath) { $TerminalSettingsPath } else { @(Get-TerminalSettingsPaths) }
-        if (-not $paths) { Write-Info "Windows Terminal settings not found; set the font to $FontFace yourself." }
-        foreach ($path in $paths) {
-            try {
-                Update-TerminalSettings -Path $path -Face $FontFace -NoLogo:(-not $KeepLogo)
-                Write-Info "font$(if (-not $KeepLogo) { ' and -NoLogo' }) set in $path (backup next to it)"
-            }
-            catch { Write-Warn "could not update ${path}: $_" }
-        }
+        Install-TerminalSettings $paths $FontFace (-not $KeepLogo)
     }
-
     if (-not $SkipProfile) {
         Write-Step 'Updating PowerShell profiles'
         $paths = if ($ProfilePath) { $ProfilePath } else { Get-DefaultProfilePaths }
-        $previous = Get-ProfileSettings $paths
-        if ($previous.Plugins -and $script:ExplicitParameters -notcontains 'Plugins') {
-            $Plugins = $previous.Plugins
-            Write-Info "keeping your plugins: $($Plugins -join ', ') (pass -Plugins to change them)"
-        }
-        if ($previous.Theme -and $script:ExplicitParameters -notcontains 'Theme') { $Theme = $previous.Theme }
-        $block = Get-ProfileBlock -Home10k $InstallDir -ThemeName $Theme -PluginNames $Plugins
-        foreach ($path in $paths) { Install-ProfileBlock -Path $path -Block $block; Write-Info $path }
+        Install-Profiles $paths $home10k $Theme (Split-PluginList $Plugins)
     }
-
     if (-not $SkipExecutionPolicy) {
         Write-Step 'Checking execution policy'
         try { Set-UserExecutionPolicy } catch { Write-Warn "could not set execution policy: $_" }
     }
-
     if (-not $NoPSReadLineUpgrade) {
         Write-Step 'Checking PSReadLine'
-        try { Install-UserPSReadLine -Source (Join-Path $InstallDir 'modules') }
+        try { Install-UserPSReadLine -Source (Join-Path $home10k 'modules') }
         catch {
             Write-Warn "could not install the bundled PSReadLine: $_"
             Write-PSReadLineHelp
