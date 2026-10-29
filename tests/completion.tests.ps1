@@ -12,9 +12,9 @@ Test-Case 'Tab falls back to in-place cycling when the menu cannot fit' {
 
 Test-Case 'completion runs with Ctrl+c as a key and restores the console mode' {
     $before = try { [Console]::TreatControlCAsInput } catch { $null }
-    function Invoke-Handler($key) { _ps10k_with_ctrl_c_as_key { "got $key" } }
+    function Invoke-Handler($key) { _ps10k_with_readline_input { "got $key" } }
     Assert-Equal 'got Tab' (Invoke-Handler 'Tab') 'the action sees the handler variables'
-    try { _ps10k_with_ctrl_c_as_key { throw 'boom' } } catch { }
+    try { _ps10k_with_readline_input { throw 'boom' } } catch { }
     $after = try { [Console]::TreatControlCAsInput } catch { $null }
     Assert-Equal $before $after 'console mode restored after an error'
     $tab = Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -eq 'Tab' } | Select-Object -First 1
@@ -70,7 +70,7 @@ Test-Case 'completion grid selects in reverse video without entry colors' {
     $column = (_ps10k_grid_layout (1..10 | ForEach-Object { "item$_" }) 16)
     Assert-Equal 2 $column.Columns 'two columns of 6+2 cells'
     Assert-Equal 5 $column.Rows
-    Assert-True ($null -eq (_ps10k_grid_internals) -or (_ps10k_grid_internals).EndOfBuffer) 'internals are found or cleanly missing'
+    Assert-True ($null -eq (_ps10k_rl_internals) -or (_ps10k_rl_internals).EndOfBuffer) 'internals are found or cleanly missing'
     $shiftTab = Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -eq 'Shift+Tab' } | Select-Object -First 1
     Assert-Equal 'PS10kTabCompleteBackward' $shiftTab.Function
 }

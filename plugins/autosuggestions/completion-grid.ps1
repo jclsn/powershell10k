@@ -17,10 +17,7 @@ $global:PS10K_GRID = @{
     Unselect = "$([char]27)[27m"
 }
 
-# The PSReadLine internals the grid needs (lib/readline.ps1), or $null.
-function global:_ps10k_grid_internals { _ps10k_rl_internals }
-
-# Row on which the command line ends.
+# Row on which the command line ends (PSReadLine internals: lib/readline.ps1).
 function global:_ps10k_grid_end_row($Rl) { (_ps10k_rl_end_point $Rl).Y }
 
 # After the screen scrolled up by $Lines, tells PSReadLine where its input is
@@ -220,28 +217,11 @@ function global:_ps10k_grid_apply($Grid, [string]$Text) {
     if ($highlight) { _ps10k_hl_clear_padding $line }
 }
 
-# Colors per entry: folders, executables and archives, the same rules as
-# syntax-highlighting's _ps10k_hl_completion_color, with the extension lists
-# turned into sets once instead of once per entry.
+# Colors per entry: folders, executables and archives, from the
+# syntax-highlighting plugin when it is loaded.
 function global:_ps10k_grid_colors($Results, [string[]]$Items) {
-    $colors = New-Object string[] $Results.Count
-    if (-not ${function:_ps10k_hl_folder_color}) { return , $colors }
-    $folderColor = _ps10k_hl_folder_color
-    $ignoreCase = [StringComparer]::OrdinalIgnoreCase
-    $executables = New-Object 'System.Collections.Generic.HashSet[string]' $ignoreCase
-    foreach ($extension in @(($env:PATHEXT -split ';') + '.ps1')) { if ($extension) { [void]$executables.Add($extension) } }
-    $archives = New-Object 'System.Collections.Generic.HashSet[string]' $ignoreCase
-    foreach ($extension in $global:PS10K_HL.Archives) { [void]$archives.Add($extension) }
-    for ($i = 0; $i -lt $Results.Count; $i++) {
-        $type = $Results[$i].ResultType
-        if ($type -eq 'ProviderContainer') { $colors[$i] = $folderColor; continue }
-        if ($type -ne 'ProviderItem') { continue }
-        $extension = try { [IO.Path]::GetExtension($Items[$i]) } catch { '' }
-        if (-not $extension) { continue }
-        if ($executables.Contains($extension)) { $colors[$i] = $global:PS10K_HL.Valid }
-        elseif ($archives.Contains($extension)) { $colors[$i] = $global:PS10K_HL.Invalid }
-    }
-    , $colors
+    if (${function:_ps10k_hl_completion_colors}) { return (_ps10k_hl_completion_colors $Results $Items) }
+    , (New-Object string[] $Results.Count)
 }
 
 # Like zsh, a folder is completed with its separator ('Workspace\'), so the
@@ -268,7 +248,7 @@ function global:_ps10k_grid_separator([string]$Word) {
 # Completes at the cursor. Returns 'done', 'cycle' (not even a row of the grid
 # fits: cycle in place instead) or 'menu' (internals missing: PSReadLine's menu).
 function global:_ps10k_grid_complete([string]$Line, [int]$Cursor, [bool]$Backward) {
-    $rl = _ps10k_grid_internals
+    $rl = _ps10k_rl_internals
     if (-not $rl) { return 'menu' }
     # The unwrapped completion: the grid colors entries itself, so the
     # syntax-highlighting wrapper's colored names would only be stripped again.

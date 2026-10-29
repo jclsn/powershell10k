@@ -70,9 +70,6 @@ function global:_ps10k_hl_command_valid([string]$Name) {
     $valid
 }
 
-# True when every command name in $Line resolves.
-function global:_ps10k_hl_line_valid([string]$Line) { (_ps10k_hl_analyze $Line).Valid }
-
 # True when $Value is an existing file or folder, or the start of the name of
 # one (Wo for Workspace). A trailing separator needs an existing folder.
 function global:_ps10k_hl_path_like([string]$Value) {
@@ -274,7 +271,7 @@ foreach ($ps10kGroup in $ps10kGroups.Keys) {
     $ps10kHandler = [scriptblock]::Create(@"
 param(`$key, `$arg)
 `$old = (_ps10k_hl_buffer).Line
-_ps10k_with_ctrl_c_as_key { [Microsoft.PowerShell.PSConsoleReadLine]::$ps10kFunction(`$key, `$arg) }
+_ps10k_with_readline_input { [Microsoft.PowerShell.PSConsoleReadLine]::$ps10kFunction(`$key, `$arg) }
 _ps10k_hl_refresh `$old $ps10kNoEmphasis
 "@)
     $ps10kArgs = @{ Chord = [string[]]$ps10kGroups[$ps10kGroup]; BriefDescription = "PS10k$ps10kFunction"; ScriptBlock = $ps10kHandler }
@@ -282,93 +279,7 @@ _ps10k_hl_refresh `$old $ps10kNoEmphasis
     try { Set-PSReadLineKeyHandler @ps10kArgs } catch { }
 }
 
-# Completion grid colors, like ls colors: folders in the prompt's folder color,
-# executables green, archives red. Set $PS10K_HL_COMPLETION = $false to turn
-# it off.
-$global:PS10K_HL.Archives = @('.zip', '.7z', '.rar', '.tar', '.gz', '.tgz', '.bz2', '.tbz', '.tbz2', '.xz', '.txz',
-    '.zst', '.tzst', '.lz', '.lzma', '.tlz', '.lz4', '.z', '.cab', '.jar', '.war', '.ear', '.deb', '.rpm', '.cpio',
-    '.arj', '.lzh', '.lha', '.ace', '.wim', '.esd', '.nupkg', '.vsix', '.appx', '.msix')
-
-# The folder segment's color: its background in rainbow style (white text on
-# blue), its text color in the other styles.
-function global:_ps10k_hl_folder_color {
-    if (${function:_ps10k_segment_colors}) {
-        $colors = _ps10k_segment_colors @{ Name = 'dir' }
-        $color = if ($global:P10K.Style -eq 'rainbow' -and $null -ne $colors.Bg) { $colors.Bg } else { $colors.Fg }
-        if ($null -ne $color) { return (_ps10k_fg $color) }
-    }
-    "$([char]27)[38;5;39m"
-}
-
-function global:_ps10k_hl_completion_color($Result, [string]$FolderColor) {
-    if ($Result.ResultType -eq 'ProviderContainer') { return $FolderColor }
-    if ($Result.ResultType -ne 'ProviderItem') { return $null }
-    $extension = [IO.Path]::GetExtension($Result.ListItemText)
-    if (-not $extension) { return $null }
-    $executables = @(($env:PATHEXT -split ';') | Where-Object { $_ }) + '.ps1'
-    if ($executables -contains $extension) { return $global:PS10K_HL.Valid }
-    if ($global:PS10K_HL.Archives -contains $extension) { return $global:PS10K_HL.Invalid }
-    $null
-}
-
-# Colors ListItemText, which PSReadLine only displays (its width math skips
-# escape codes). Only the foreground is reset, so the selected entry keeps its
-# Selection background.
-function global:_ps10k_hl_color_completions($Completion) {
-    if ($global:PS10K_HL_COMPLETION -eq $false) { return }
-    $results = $Completion.CompletionMatches
-    if (-not $results -or $results.Count -lt 2) { return }
-    # Without a common CompletionText prefix PSReadLine takes the prefix from
-    # ListItemText, which would then contain the color codes.
-    $prefix = $results[0].CompletionText
-    foreach ($r in $results) {
-        $i = 0
-        while ($i -lt $prefix.Length -and $i -lt $r.CompletionText.Length -and
-            [char]::ToLowerInvariant($prefix[$i]) -eq [char]::ToLowerInvariant($r.CompletionText[$i])) { $i++ }
-        $prefix = $prefix.Substring(0, $i)
-        if (-not $prefix) { return }
-    }
-    $folderColor = _ps10k_hl_folder_color
-    $esc = [char]27
-    for ($n = 0; $n -lt $results.Count; $n++) {
-        $r = $results[$n]
-        $color = _ps10k_hl_completion_color $r $folderColor
-        if (-not $color -or $r.ListItemText.Contains($esc)) { continue }
-        $toolTip = if ($r.ToolTip) { $r.ToolTip } else { $r.ListItemText }
-        $results[$n] = New-Object System.Management.Automation.CompletionResult(
-            $r.CompletionText, "$color$($r.ListItemText)$esc[39m", $r.ResultType, $toolTip)
-    }
-}
-
-# PSReadLine gets its completions from TabExpansion2, so wrapping it colors
-# both the menu and in-place cycling (which only uses CompletionText).
-if (-not $global:_ps10k_tabexpansion2) {
-    $global:_ps10k_tabexpansion2 = (Get-Command TabExpansion2 -CommandType Function -ErrorAction Ignore).ScriptBlock
-}
-if ($global:_ps10k_tabexpansion2) {
-    function global:TabExpansion2 {
-        [CmdletBinding(DefaultParameterSetName = 'ScriptInputSet')]
-        param(
-            [Parameter(ParameterSetName = 'ScriptInputSet', Mandatory = $true, Position = 0)]
-            [string]$inputScript,
-            [Parameter(ParameterSetName = 'ScriptInputSet', Position = 1)]
-            [int]$cursorColumn = $inputScript.Length,
-            [Parameter(ParameterSetName = 'AstInputSet', Mandatory = $true, Position = 0)]
-            [System.Management.Automation.Language.Ast]$ast,
-            [Parameter(ParameterSetName = 'AstInputSet', Mandatory = $true, Position = 1)]
-            [System.Management.Automation.Language.Token[]]$tokens,
-            [Parameter(ParameterSetName = 'AstInputSet', Mandatory = $true, Position = 2)]
-            [System.Management.Automation.Language.IScriptPosition]$positionOfCursor,
-            [Parameter(ParameterSetName = 'ScriptInputSet', Position = 2)]
-            [Parameter(ParameterSetName = 'AstInputSet', Position = 3)]
-            [Hashtable]$options = $null
-        )
-        if ($PSCmdlet.ParameterSetName -eq 'ScriptInputSet') { $PSBoundParameters['cursorColumn'] = $cursorColumn }
-        $completion = & $global:_ps10k_tabexpansion2 @PSBoundParameters
-        try { _ps10k_hl_color_completions $completion } catch { }
-        $completion
-    }
-}
+. ([IO.Path]::Combine($PSScriptRoot, 'completion-colors.ps1'))
 
 # A fresh prompt starts with an empty line; commands may have been defined.
 Add-PS10kHook -Type precmd -Action {

@@ -11,10 +11,10 @@ Test-Case 'highlighting accepts scripts and executables, not documents' {
     try {
         $global:PS10K_HL.Cache = @{}
         foreach ($line in '.\run.ps1', '.\run', '& .\build.bat -x', '.\build.cmd', '.\tool.exe', "$dir\build.bat", 'whoami') {
-            Assert-True (_ps10k_hl_line_valid $line) "$line should be valid"
+            Assert-True ((_ps10k_hl_analyze $line).Valid) "$line should be valid"
         }
         foreach ($line in '.\notes.md', '.\missing.bat', 'run.ps1') {
-            Assert-True (-not (_ps10k_hl_line_valid $line)) "$line should be invalid"
+            Assert-True (-not ((_ps10k_hl_analyze $line).Valid)) "$line should be invalid"
         }
     }
     finally { Pop-Location }
@@ -68,16 +68,16 @@ Test-Case 'keys that shorten the line are wrapped for highlighting' {
 
 Test-Case 'highlighting lookups do not fill $Error' {
     $before = $global:Error.Count
-    [void](_ps10k_hl_line_valid '.\no-such-script-ps10k')
-    [void](_ps10k_hl_line_valid 'no-such-command-ps10k')
+    [void]((_ps10k_hl_analyze '.\no-such-script-ps10k').Valid)
+    [void]((_ps10k_hl_analyze 'no-such-command-ps10k').Valid)
     Assert-Equal $before $global:Error.Count
 }
 
 Test-Case 'syntax highlighting detects unknown commands' {
-    if (-not (Get-Command _ps10k_hl_line_valid -ErrorAction SilentlyContinue)) { throw 'plugin not loaded (PSReadLine missing?)' }
-    Assert-True (_ps10k_hl_line_valid 'Get-ChildItem | Select-Object -First 1')
-    Assert-True (-not (_ps10k_hl_line_valid 'definitely-not-a-command-ps10k'))
-    Assert-True (_ps10k_hl_line_valid '')
+    if (-not (Get-Command _ps10k_hl_analyze -ErrorAction SilentlyContinue)) { throw 'plugin not loaded (PSReadLine missing?)' }
+    Assert-True ((_ps10k_hl_analyze 'Get-ChildItem | Select-Object -First 1').Valid)
+    Assert-True (-not ((_ps10k_hl_analyze 'definitely-not-a-command-ps10k').Valid))
+    Assert-True ((_ps10k_hl_analyze '').Valid)
 }
 
 Test-Case 'command lookups are cached and documents are not executables' {
