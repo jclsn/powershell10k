@@ -335,6 +335,16 @@ Test-Case 'existing paths and their beginnings are underlined' {
     finally { Pop-Location; [void](_ps10k_hl_update '') }
 }
 
+Test-Case 'keys that shorten the line are wrapped for highlighting' {
+    $bound = @{}
+    foreach ($k in Get-PSReadLineKeyHandler -Bound) { if (-not $bound.ContainsKey($k.Key)) { $bound[$k.Key] = $k.Function } }
+    foreach ($key in 'UpArrow', 'DownArrow', 'Ctrl+w', 'Ctrl+u', 'Ctrl+z') {
+        if ($bound.ContainsKey($key)) { Assert-True ($bound[$key] -like 'PS10k*') "$key is wrapped, got $($bound[$key])" }
+    }
+    Assert-True (Get-Command _ps10k_rl_clear_emphasis) 'history emphasis can be switched off'
+    Assert-True (-not (_ps10k_rl_clear_emphasis)) 'no emphasis outside a history search'
+}
+
 Test-Case 'highlighting lookups do not fill $Error' {
     $before = $global:Error.Count
     [void](_ps10k_hl_line_valid '.\no-such-script-ps10k')
@@ -373,7 +383,7 @@ Test-Case 'vi-mode switches PSReadLine and redraws the prompt char' {
         if ($warnings) { throw "warnings: $($warnings -join '; ')" }
         Assert-Equal 'Vi' (Get-PSReadLineOption).EditMode
         $commandKeys = @(Get-PSReadLineKeyHandler -Bound | Where-Object { $_.Key -eq '<k>' })
-        Assert-Equal 'HistorySearchBackward' $commandKeys[0].Function
+        Assert-Equal 'PS10kHistorySearchBackward' $commandKeys[0].Function 'k searches history (wrapped by syntax-highlighting)'
         $P10K.MultiLine = $true
         [void](prompt)
         $global:_ps10k_state.ViMode = 'Command'
