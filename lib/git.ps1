@@ -4,24 +4,22 @@
 $global:_ps10k_git_exe = $null
 
 # Walks up from $Path looking for .git; returns @{ Root; GitDir } or $null.
+# Runs on every prompt, so it uses .NET file checks instead of Test-Path.
+# A .git file (worktrees, submodules) points to the real git dir.
 function global:_ps10k_find_repo([string]$Path) {
     $dir = $Path
     while ($dir) {
-        $dotGit = Join-Path $dir '.git'
-        if (Test-Path -LiteralPath $dotGit -PathType Container) {
-            return @{ Root = $dir; GitDir = $dotGit }
-        }
-        if (Test-Path -LiteralPath $dotGit -PathType Leaf) {
-            $line = Get-Content -LiteralPath $dotGit -TotalCount 1 -ErrorAction SilentlyContinue
+        $dotGit = [IO.Path]::Combine($dir, '.git')
+        if ([IO.Directory]::Exists($dotGit)) { return @{ Root = $dir; GitDir = $dotGit } }
+        if ([IO.File]::Exists($dotGit)) {
+            $line = try { [IO.File]::ReadAllLines($dotGit)[0] } catch { '' }
             if ($line -match '^gitdir:\s*(.+)$') {
                 $gitDir = $Matches[1].Trim()
-                if (-not [IO.Path]::IsPathRooted($gitDir)) { $gitDir = Join-Path $dir $gitDir }
+                if (-not [IO.Path]::IsPathRooted($gitDir)) { $gitDir = [IO.Path]::GetFullPath([IO.Path]::Combine($dir, $gitDir)) }
                 return @{ Root = $dir; GitDir = $gitDir }
             }
         }
-        $parent = Split-Path -Path $dir -Parent
-        if (-not $parent -or $parent -eq $dir) { break }
-        $dir = $parent
+        $dir = [IO.Path]::GetDirectoryName($dir)
     }
     $null
 }
