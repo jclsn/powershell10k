@@ -115,10 +115,15 @@ $ps10kGitKeep = @('gm', 'gcm') | Where-Object { @($global:PS10K_GIT_OVERRIDE) -n
 
 foreach ($ps10kName in @($ps10kGitAliases.Keys)) {
     if ($ps10kGitKeep -contains $ps10kName) { continue }
-    if (Test-Path -LiteralPath "Alias:$ps10kName") { Remove-Item -LiteralPath "Alias:$ps10kName" -Force -ErrorAction SilentlyContinue }
     $ps10kArgs = $ps10kGitAliases[$ps10kName]
-    $ps10kBody = if ($ps10kArgs) { "git $ps10kArgs @args" } else { 'git @args' }
-    Set-Item -Path "Function:global:$ps10kName" -Value ([scriptblock]::Create($ps10kBody))
+    $ps10kBody = [scriptblock]::Create($(if ($ps10kArgs) { "git $ps10kArgs @args" } else { 'git @args' }))
+    if (Test-Path -LiteralPath "Alias:$ps10kName") {
+        # Taken by a built-in alias (gc, gl, gp): aliases win over functions,
+        # so the alias is repointed to a function of another name.
+        Set-Item -Path "Function:global:_ps10k_git_$ps10kName" -Value $ps10kBody
+        _ps10k_set_alias $ps10kName "_ps10k_git_$ps10kName"
+    }
+    else { Set-Item -Path "Function:global:$ps10kName" -Value $ps10kBody }
 }
 
 # Aliases that need the current or main branch.
@@ -130,7 +135,8 @@ function global:ggpull { git pull origin (git_current_branch) @args }
 function global:ggpush { git push origin (git_current_branch) @args }
 function global:gpsup { git push --set-upstream origin (git_current_branch) @args }
 function global:groh { git reset "origin/$(git_current_branch)" --hard }
-function global:gwip { git add -A; git rm (git ls-files --deleted) 2>$null; git commit --no-verify --no-gpg-sign -m '--wip-- [skip ci]' }
+# git add -A stages deletions too, so no separate git rm is needed.
+function global:gwip { git add -A; git commit --no-verify --no-gpg-sign -m '--wip-- [skip ci]' }
 function global:gunwip {
     if ((git log -n 1 --format=%s) -like '--wip--*') { git reset HEAD~1 }
 }
