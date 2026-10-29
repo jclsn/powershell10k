@@ -113,18 +113,23 @@ $ps10kGitAliases = [ordered]@{
 
 $ps10kGitKeep = @('gm', 'gcm') | Where-Object { @($global:PS10K_GIT_OVERRIDE) -notcontains $_ }
 
-foreach ($ps10kName in @($ps10kGitAliases.Keys)) {
+# All alias functions are defined by one generated script: one parse instead
+# of a Set-Item per alias. Names taken by a built-in alias (gc, gl, gp) get a
+# function of another name, and the alias is repointed to it, because
+# aliases win over functions.
+# The alias list is read once: looking up names that do not exist one by one
+# makes PowerShell search every module for them.
+$ps10kExisting = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+foreach ($ps10kAlias in Get-Alias) { [void]$ps10kExisting.Add($ps10kAlias.Name) }
+$ps10kTaken = New-Object System.Collections.ArrayList
+$ps10kScript = foreach ($ps10kName in @($ps10kGitAliases.Keys)) {
     if ($ps10kGitKeep -contains $ps10kName) { continue }
-    $ps10kArgs = $ps10kGitAliases[$ps10kName]
-    $ps10kBody = [scriptblock]::Create($(if ($ps10kArgs) { "git $ps10kArgs @args" } else { 'git @args' }))
-    if (Test-Path -LiteralPath "Alias:$ps10kName") {
-        # Taken by a built-in alias (gc, gl, gp): aliases win over functions,
-        # so the alias is repointed to a function of another name.
-        Set-Item -Path "Function:global:_ps10k_git_$ps10kName" -Value $ps10kBody
-        _ps10k_set_alias $ps10kName "_ps10k_git_$ps10kName"
-    }
-    else { Set-Item -Path "Function:global:$ps10kName" -Value $ps10kBody }
+    $ps10kFunction = $ps10kName
+    if ($ps10kExisting.Contains($ps10kName)) { $ps10kFunction = "_ps10k_git_$ps10kName"; [void]$ps10kTaken.Add($ps10kName) }
+    "function global:$ps10kFunction { git $($ps10kGitAliases[$ps10kName]) @args }"
 }
+. ([scriptblock]::Create($ps10kScript -join "`n"))
+foreach ($ps10kName in $ps10kTaken) { _ps10k_set_alias $ps10kName "_ps10k_git_$ps10kName" }
 
 # Aliases that need the current or main branch.
 function global:gcm { git checkout (git_main_branch) @args }
@@ -184,4 +189,4 @@ Register-ArgumentCompleter -Native -CommandName git -ScriptBlock {
     }
 }
 
-Remove-Variable -Name ps10kGitAliases, ps10kGitKeep, ps10kName, ps10kArgs, ps10kBody -ErrorAction SilentlyContinue
+Remove-Variable -Name ps10kGitAliases, ps10kGitKeep, ps10kName, ps10kTaken, ps10kScript, ps10kFunction, ps10kExisting, ps10kAlias -ErrorAction SilentlyContinue
