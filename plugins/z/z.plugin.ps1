@@ -6,14 +6,14 @@
 #   z -c foo     restrict matches to subdirectories of the current directory
 # Data lives in $env:PS10K_Z_DATA (default ~/.ps10k_z), one "path|rank|time" per line.
 
-if (-not $env:PS10K_Z_DATA) { $env:PS10K_Z_DATA = Join-Path $HOME '.ps10k_z' }
+if (-not $env:PS10K_Z_DATA) { $env:PS10K_Z_DATA = [IO.Path]::Combine($HOME, '.ps10k_z') }
 $global:PS10K_Z_MAX_SCORE = 9000
 
 function global:_ps10k_z_now { [int64]([DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) }
 
 function global:_ps10k_z_load {
     $entries = @{}
-    if (Test-Path -LiteralPath $env:PS10K_Z_DATA) {
+    if ([IO.File]::Exists($env:PS10K_Z_DATA)) {
         foreach ($line in [IO.File]::ReadAllLines($env:PS10K_Z_DATA)) {
             $parts = $line.Split('|')
             if ($parts.Count -ne 3) { continue }
@@ -27,9 +27,12 @@ function global:_ps10k_z_save($Entries) {
     $lines = foreach ($e in $Entries.Values) {
         '{0}|{1}|{2}' -f $e.Path, $e.Rank.ToString([Globalization.CultureInfo]::InvariantCulture), $e.Time
     }
+    # Written next to the data and swapped in, so a crash cannot leave half a
+    # file. .NET calls: this runs on every directory change.
     $tmp = "$($env:PS10K_Z_DATA).$PID.tmp"
     [IO.File]::WriteAllLines($tmp, [string[]]@($lines))
-    Move-Item -LiteralPath $tmp -Destination $env:PS10K_Z_DATA -Force
+    if ([IO.File]::Exists($env:PS10K_Z_DATA)) { [IO.File]::Replace($tmp, $env:PS10K_Z_DATA, [NullString]::Value) }
+    else { [IO.File]::Move($tmp, $env:PS10K_Z_DATA) }
 }
 
 function global:_ps10k_z_add([string]$Path) {
