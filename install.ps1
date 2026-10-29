@@ -228,44 +228,58 @@ function Update-TerminalSettings([string]$Path, [string]$Face, [switch]$NoLogo) 
     [IO.File]::WriteAllText($Path, $json, (New-Object System.Text.UTF8Encoding $false))
 }
 
-function Install-UserFonts([string]$Source) {
+# Installs the bundled fonts for the current user: a copy in the per-user
+# font folder plus a registry entry (Windows 10 1809+). -FontDir, -RegistryKey
+# and -NoLoad exist for the tests, which must not touch the real ones.
+function Install-UserFonts {
+    param(
+        [string]$Source,
+        [string]$FontDir = (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'),
+        [string]$RegistryKey = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts',
+        [switch]$NoLoad
+    )
     $build = [Environment]::OSVersion.Version.Build
     if ($build -lt 17763) {
         Write-Warn "Per-user fonts need Windows 10 1809 or newer (this is build $build)."
         Write-Warn "Install the fonts in $Source manually (right-click > Install)."
         return $false
     }
-    $fontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
-    $regKey = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
-    if (-not (Test-Path -LiteralPath $fontDir)) { New-Item -ItemType Directory -Path $fontDir -Force | Out-Null }
-    if (-not (Test-Path -LiteralPath $regKey)) { New-Item -Path $regKey -Force | Out-Null }
+    if (-not (Test-Path -LiteralPath $FontDir)) { New-Item -ItemType Directory -Path $FontDir -Force | Out-Null }
+    if (-not (Test-Path -LiteralPath $RegistryKey)) { New-Item -Path $RegistryKey -Force | Out-Null }
 
+    $installed = @()
+    foreach ($file in $script:FontFiles.Keys) {
+        $target = Join-Path $FontDir $file
+        $valueName = $script:FontFiles[$file]
+        $registered = Get-ItemProperty -Path $RegistryKey -Name $valueName -ErrorAction SilentlyContinue
+        if ((Test-Path -LiteralPath $target) -and $registered) { Write-Info "$file already installed"; continue }
+        $bundled = Join-Path $Source $file
+        if (-not (Test-Path -LiteralPath $bundled)) { throw "bundled font missing: $bundled" }
+        Write-Info "installing $file"
+        Copy-Item -LiteralPath $bundled -Destination $target -Force
+        New-ItemProperty -Path $RegistryKey -Name $valueName -Value $target -PropertyType String -Force | Out-Null
+        $installed += $target
+    }
+    if ($installed -and -not $NoLoad) { Register-SessionFonts $installed }
+    $true
+}
+
+# Makes new fonts usable without signing out and tells running apps about
+# them. Compiled only when a font was actually installed: Add-Type is slow.
+function Register-SessionFonts([string[]]$Paths) {
     Add-Type -Namespace PS10k -Name Gdi -ErrorAction SilentlyContinue -MemberDefinition @'
 [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
 public static extern int AddFontResource(string lpFileName);
 [DllImport("user32.dll", CharSet = CharSet.Unicode)]
 public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
 '@
-
-    foreach ($file in $script:FontFiles.Keys) {
-        $target = Join-Path $fontDir $file
-        $valueName = $script:FontFiles[$file]
-        $registered = Get-ItemProperty -Path $regKey -Name $valueName -ErrorAction SilentlyContinue
-        if ((Test-Path -LiteralPath $target) -and $registered) { Write-Info "$file already installed"; continue }
-        $bundled = Join-Path $Source $file
-        if (-not (Test-Path -LiteralPath $bundled)) { throw "bundled font missing: $bundled" }
-        Write-Info "installing $file"
-        Copy-Item -LiteralPath $bundled -Destination $target -Force
-        New-ItemProperty -Path $regKey -Name $valueName -Value $target -PropertyType String -Force | Out-Null
-        try { [void][PS10k.Gdi]::AddFontResource($target) } catch { }
-    }
+    foreach ($path in $Paths) { try { [void][PS10k.Gdi]::AddFontResource($path) } catch { } }
     try {
         $result = [UIntPtr]::Zero
         # HWND_BROADCAST, WM_FONTCHANGE: tell running apps that fonts changed.
         [void][PS10k.Gdi]::SendMessageTimeout([IntPtr]0xffff, 0x001D, [UIntPtr]::Zero, [IntPtr]::Zero, 0x0002, 1000, [ref]$result)
     }
     catch { }
-    $true
 }
 
 function Copy-Framework([string]$Source, [string]$Target) {
