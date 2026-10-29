@@ -49,7 +49,11 @@ function global:_ps10k_vi_mode_changed($Mode) {
     # Command mode edits (x, dd, u, p, ...) bypass syntax-highlighting's key
     # handlers, so the command color is refreshed on every mode switch.
     $recolor = $false
-    if (Get-Command _ps10k_hl_update -ErrorAction SilentlyContinue) {
+    $highlight = [bool](Get-Command _ps10k_hl_update -ErrorAction SilentlyContinue)
+    # The line as the highlighter last saw it: cw, cc, C and similar shorten it
+    # without passing through a wrappable key handler.
+    $previous = if ($highlight) { $global:PS10K_HL.LastLine } else { $null }
+    if ($highlight) {
         try { $b = _ps10k_hl_buffer; $recolor = _ps10k_hl_update $b.Line } catch { }
     }
     $state = $global:_ps10k_state
@@ -64,6 +68,7 @@ function global:_ps10k_vi_mode_changed($Mode) {
         [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $b.Line.Length, $b.Line)
         [Microsoft.PowerShell.PSConsoleReadLine]::SetCursorPosition($b.Cursor)
     }
+    if ($highlight) { _ps10k_hl_clear_padding $previous }
 }
 
 if ((Get-Module PSReadLine).Version -ge [version]'2.1.0') {
