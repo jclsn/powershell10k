@@ -11,6 +11,9 @@ param(
     [string[]]$Area
 )
 $ErrorActionPreference = 'Stop'
+# powershell -File gets "-Area a, b" as separate words, not as a list: the
+# first lands in $Area, the rest in $args, possibly with trailing commas.
+$Area = @(@($Area) + @($args) | ForEach-Object { "$_" -split '[,\s]+' } | Where-Object { $_ })
 $root = Split-Path -Parent $PSScriptRoot
 $work = Join-Path ([IO.Path]::GetTempPath()) ("ps10k-tests-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 New-Item -ItemType Directory -Path $work | Out-Null

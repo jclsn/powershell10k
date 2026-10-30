@@ -262,7 +262,9 @@ Test-Case 'wizard builds and previews configurations' {
     $preview = @(_ps10k_wizard_preview @{ Style = 'rainbow' } 'Label' 6>&1) -join "`n"
     Assert-True ($preview -match 'Label')
     Assert-True ($preview -match 'powershell10k') 'sample folder in the preview'
-    Assert-True (-not (_ps10k_can_prompt)) 'no wizard without an interactive console'
+    # Only decidable here when input is redirected; in a terminal there is a console.
+    if ([Console]::IsInputRedirected) { Assert-True (-not (_ps10k_can_prompt)) 'no wizard without an interactive console' }
+    else { Assert-True ((_ps10k_can_prompt) -is [bool]) }
 }
 
 Test-Case 'minimal theme renders a one-line prompt' {

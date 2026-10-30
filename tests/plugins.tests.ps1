@@ -166,9 +166,15 @@ Test-Case 'aliases plugin: navigation and file helpers' {
     $message = try { which no-such-command-ps10k 2>&1 } catch { "$_" }
     Assert-True ("$message" -match 'not found')
     Assert-True ((path) -contains "$env:SystemRoot\system32" -or @(path).Count -gt 0) 'path splits PATH'
-    if (Get-Command grep -CommandType Function -ErrorAction Ignore) {
-        Assert-Equal 'b' ('a', 'b' | grep 'b').Line 'grep filters input'
-    }
+    # The fallback grep, whether or not grep.exe is on PATH here.
+    Assert-Equal 'b' ('a', 'b' | _ps10k_grep 'b').Line 'grep filters piped strings'
+    Push-Location -LiteralPath $root
+    try { Assert-True (@(Get-ChildItem | _ps10k_grep 'README').Count -eq 1) 'and piped objects as they are displayed' }
+    finally { Pop-Location }
+    $file = Join-Path $work 'grep.txt'
+    Set-Content -LiteralPath $file -Value 'one', 'two'
+    Assert-Equal 'two' (_ps10k_grep 'tw' $file).Line 'and files'
+    if (-not (Get-Command grep -CommandType Application -ErrorAction Ignore)) { Assert-Equal '_ps10k_grep' (Get-Alias grep).Definition }
 }
 
 Test-Case 'extract unpacks zip archives into a folder of the same name' {
