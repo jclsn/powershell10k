@@ -35,12 +35,24 @@ function global:which([Parameter(Mandatory)][string]$Name) {
     }
 }
 
-if (-not (Get-Command grep -CommandType Application -ErrorAction SilentlyContinue)) {
-    function global:grep {
-        param([Parameter(Mandatory, Position = 0)][string]$Pattern, [Parameter(ValueFromRemainingArguments)][string[]]$Path)
+# grep for machines without grep.exe: files, or piped input matched as it is
+# displayed (ls | grep foo). Always defined as _ps10k_grep, grep only when
+# missing.
+function global:_ps10k_grep {
+    param(
+        [Parameter(Mandatory, Position = 0)][string]$Pattern,
+        [Parameter(Position = 1, ValueFromRemainingArguments)][string[]]$Path,
+        [Parameter(ValueFromPipeline)]$InputObject
+    )
+    begin { $piped = New-Object System.Collections.ArrayList }
+    process { if ($null -ne $InputObject) { [void]$piped.Add($InputObject) } }
+    end {
         if ($Path) { Select-String -Pattern $Pattern -Path $Path }
-        else { $input | Select-String -Pattern $Pattern }
+        else { $piped | Out-String -Stream | Select-String -Pattern $Pattern }
     }
+}
+if (-not (Get-Command grep -CommandType Application -ErrorAction SilentlyContinue)) {
+    Set-Alias -Name grep -Value _ps10k_grep -Scope Global
 }
 
 function global:h { Get-History @args }
