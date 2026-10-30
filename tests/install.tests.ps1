@@ -218,27 +218,38 @@ Test-Case 'uninstall removes config and data, and refuses foreign folders' {
     Assert-True (-not (Test-Path $config)) 'config removed'
     Assert-True (-not (Test-Path $zData)) 'z data removed'
     Assert-True (Test-Path $foreign) 'a folder without powershell10k.ps1 is not deleted'
-    Assert-True ($out -match 'does not look like a powershell10k\s+install') "warning shown: $out"
+    # Console line wrapping puts extra spaces anywhere in the warning.
+    Assert-True (($out -replace '\s+', ' ') -match 'does not look like a powershell10k install') "warning shown: $out"
     Assert-Equal '# just mine' (Get-Content -LiteralPath $profileFile) 'a profile without the block is untouched'
 }
 
-Test-Case 'the diagnostic report covers the important parts' {
-    $home10k = Join-Path $work 'diag-home'
-    New-Item -ItemType Directory -Path $home10k -Force | Out-Null
-    $command = "`$env:PS10K_HOME = '$root'; `$env:PS10K_CONFIG = '$work\none.ps1'; `$env:PS10K_DISABLE_WIZARD = '1'; " +
+# Runs tools\diagnose.ps1 in a fresh process with $HomeDir as the home folder
+# and returns the report. $Setup runs first (e.g. to empty $PROFILE).
+function Invoke-TestDiagnose([string]$HomeDir, [string]$Setup = '') {
+    New-Item -ItemType Directory -Path $HomeDir -Force | Out-Null
+    $command = "`$env:PS10K_HOME = '$root'; `$env:PS10K_CONFIG = '$work\none.ps1'; `$env:PS10K_DISABLE_WIZARD = '1'; $Setup; " +
         "Import-Module PSReadLine; `$global:PS10K_PLUGINS = @('git'); . '$root\powershell10k.ps1' 3>`$null; . '$root\tools\diagnose.ps1' 6>`$null"
-    $saved = $env:USERPROFILE
+    $saved = $env:USERPROFILE; $savedPreference = $ErrorActionPreference
     try {
-        $env:USERPROFILE = $home10k
-        & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $command 2>&1 | Out-Null
+        # Errors the child prints are not test failures: the report is checked.
+        $ErrorActionPreference = 'Continue'
+        $env:USERPROFILE = $HomeDir
+        $out = & powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command $command 2>&1 | Out-String
     }
-    finally { $env:USERPROFILE = $saved }
-    $report = Join-Path $home10k 'ps10k-diagnose.txt'
-    Assert-True (Test-Path $report) 'report saved in the home folder'
-    $text = Get-Content -LiteralPath $report -Raw
+    finally { $env:USERPROFILE = $saved; $ErrorActionPreference = $savedPreference }
+    $report = Join-Path $HomeDir 'ps10k-diagnose.txt'
+    Assert-True (Test-Path $report) "report saved in the home folder; output: $out"
+    Get-Content -LiteralPath $report -Raw
+}
+
+Test-Case 'the diagnostic report covers the important parts' {
+    $text = Invoke-TestDiagnose (Join-Path $work 'diag-home')
     foreach ($section in '== session', '== execution policy', '== profile', '== powershell10k', '== PSReadLine', '== completion here', '== appearance: prompt config', '== appearance: Windows Terminal', '== recent errors') {
         Assert-True ($text.Contains($section)) "section $section"
     }
     Assert-True ($text -match 'loaded\s+2\.\d') 'PSReadLine version'
     Assert-True ($text -match 'PS10K_PLUGINS\s+git')
+    $odd = Invoke-TestDiagnose (Join-Path $work 'diag-odd') '$global:PROFILE = $null'
+    Assert-True ($odd -match 'PROFILE\s+<none> \(exists False\)') 'no profile path (no Documents folder) is reported, not fatal'
+    Assert-True ($odd.Contains('== recent errors')) 'the rest of the report is still there'
 }
