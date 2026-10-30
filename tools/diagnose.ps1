@@ -16,6 +16,9 @@
     function Add-Line([string]$Text) { [void]$lines.Add($Text) }
     function Add-Section([string]$Title) { [void]$lines.Add(''); [void]$lines.Add("== $Title") }
     function Try-Value([scriptblock]$Block) { try { "$(& $Block)" } catch { "<error: $($_.Exception.Message)>" } }
+    # Test-Path that copes with empty paths, which odd setups produce (no
+    # Documents folder: empty $PROFILE).
+    function Test-Exists([string]$Path) { [bool]$Path -and (Test-Path -LiteralPath $Path) }
 
     Add-Section 'session'
     Add-Line "PowerShell      $($PSVersionTable.PSVersion) $($PSVersionTable.PSEdition), host $($Host.Name)"
@@ -33,8 +36,8 @@
     foreach ($p in Get-ExecutionPolicy -List) { Add-Line ("{0,-15} {1}" -f $p.Scope, $p.ExecutionPolicy) }
 
     Add-Section 'profile'
-    Add-Line "PROFILE         $PROFILE (exists $(Test-Path -LiteralPath $PROFILE))"
-    if (Test-Path -LiteralPath $PROFILE) {
+    Add-Line "PROFILE         $(if ($PROFILE) { $PROFILE } else { '<none>' }) (exists $(Test-Exists $PROFILE))"
+    if (Test-Exists $PROFILE) {
         $text = [IO.File]::ReadAllText($PROFILE)
         $block = [regex]::Match($text, '(?s)# >>> powershell10k >>>.*?# <<< powershell10k <<<')
         if ($block.Success) { foreach ($l in $block.Value -split "`r?`n") { Add-Line "  $l" } }
@@ -45,10 +48,10 @@
     }
 
     Add-Section 'powershell10k'
-    Add-Line "PS10K_HOME      $env:PS10K_HOME (exists $(if ($env:PS10K_HOME) { Test-Path -LiteralPath $env:PS10K_HOME } else { $false }))"
+    Add-Line "PS10K_HOME      $env:PS10K_HOME (exists $(if ($env:PS10K_HOME) { Test-Exists $env:PS10K_HOME } else { $false }))"
     if ($env:PS10K_HOME) {
         $version = Join-Path $env:PS10K_HOME 'VERSION'
-        if (Test-Path -LiteralPath $version) { Add-Line "version         $((Get-Content -LiteralPath $version -TotalCount 1).Trim())" }
+        if (Test-Exists $version) { Add-Line "version         $((Get-Content -LiteralPath $version -TotalCount 1).Trim())" }
         Add-Line "plugins on disk $(@(Get-ChildItem -LiteralPath (Join-Path $env:PS10K_HOME 'plugins') -Directory -ErrorAction SilentlyContinue | ForEach-Object Name) -join ', ')"
         $blocked = @(Get-ChildItem -LiteralPath $env:PS10K_HOME -Recurse -File -ErrorAction SilentlyContinue |
             Where-Object { Get-Item -LiteralPath $_.FullName -Stream Zone.Identifier -ErrorAction Ignore })
@@ -66,7 +69,7 @@
     Add-Line "loaded          $(if ($loaded) { "$($loaded.Version) from $($loaded.ModuleBase)" } else { 'NO' })"
     foreach ($m in Get-Module -ListAvailable PSReadLine) {
         $dll = Join-Path $m.ModuleBase 'Microsoft.PowerShell.PSReadLine.dll'
-        if (-not (Test-Path -LiteralPath $dll)) { $dll = Join-Path $m.ModuleBase 'Microsoft.PowerShell.PSReadLine2.dll' }
+        if (-not (Test-Exists $dll)) { $dll = Join-Path $m.ModuleBase 'Microsoft.PowerShell.PSReadLine2.dll' }
         $zone = [bool](Get-Item -LiteralPath $dll -Stream Zone.Identifier -ErrorAction Ignore)
         Add-Line "available       $($m.Version) in $($m.ModuleBase)$(if ($zone) { '  (BLOCKED: downloaded file)' })"
     }
@@ -107,7 +110,7 @@
         $matches10k = @($completion.CompletionMatches)
         Add-Line "matches         $($matches10k.Count) for '$sample'"
         $missing = @($matches10k | Where-Object { $_.ResultType -eq 'ProviderItem' -or $_.ResultType -eq 'ProviderContainer' } |
-            Where-Object { -not (Test-Path -LiteralPath ($_.CompletionText.Trim("'", '"', '&', ' '))) })
+            Where-Object { -not (Test-Exists ($_.CompletionText.Trim("'", '"', '&', ' '))) })
         Add-Line "missing on disk $($missing.Count)$(if ($missing) { ' e.g. ' + (($missing | Select-Object -First 3 | ForEach-Object { $_.CompletionText }) -join ', ') })"
         if (Get-Command _ps10k_menu_fits -ErrorAction Ignore) { Add-Line "menu fits       $(Try-Value { _ps10k_menu_fits $sample $sample.Length })" }
     }
@@ -118,7 +121,7 @@
 
     Add-Section 'appearance: prompt config'
     $configPath = if ($env:PS10K_CONFIG) { $env:PS10K_CONFIG } else { Join-Path $HOME '.p10k.ps1' }
-    if (Test-Path -LiteralPath $configPath) {
+    if (Test-Exists $configPath) {
         Add-Line "file            $configPath"
         foreach ($l in Get-Content -LiteralPath $configPath | Where-Object { $_ -match '\S' -and $_ -notmatch '^\s*#' }) { Add-Line "  $l" }
     }
@@ -138,7 +141,7 @@
         (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json'),
         (Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json'),
         (Join-Path $env:LOCALAPPDATA 'Microsoft\Windows Terminal\settings.json')
-    ) | Where-Object { Test-Path -LiteralPath $_ }
+    ) | Where-Object { Test-Exists $_ }
     $wtPackage = Try-Value { (Get-AppxPackage Microsoft.WindowsTerminal* -ErrorAction Stop | ForEach-Object { "$($_.Name) $($_.Version)" }) -join ', ' }
     Add-Line "package         $wtPackage"
     foreach ($wtFile in $wtFiles) {
