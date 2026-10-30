@@ -16,7 +16,7 @@ needed**.
 - Tab completion grid with colored folders, executables and archives
 - Optional vi mode and inline suggestions
 - oh-my-zsh style plugins, such as `git` aliases and `z`
-- `cd` without arguments goes home
+- `cd` without arguments goes home, `cd ...` goes up two folders
 - Works offline: the font and PSReadLine are bundled
 
 ## Install
@@ -64,7 +64,7 @@ $global:PS10K_PLUGINS = @('git', 'z', 'aliases', 'autosuggestions', 'syntax-high
 | --- | --- |
 | `git` | all of oh-my-zsh's git aliases and functions (`gst`, `gco`, `gp`, `ggpush`, ...) and completion |
 | `z` | jump to frequently used folders: `z proj` |
-| `aliases` | `..`, `ll`, `take`, `touch`, `which`, `pwsh` (when PowerShell 7 is missing) and more |
+| `aliases` | `..`, `...` (also in paths: `ls ....\src`), `ll`, `take`, `touch`, `which`, `pwsh` (when PowerShell 7 is missing) and more |
 | `autosuggestions` | history search and the Tab completion grid |
 | `syntax-highlighting` | colors as you type |
 | `vi-mode` | vi key bindings, like `bindkey -v` |
