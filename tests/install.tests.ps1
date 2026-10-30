@@ -83,7 +83,9 @@ Test-Case 'bundled PSReadLine is complete and installs to the user module folder
     Assert-True (Test-Path (Join-Path $fakeModules 'PSReadLine\99.0.0\netstd\x.dll')) 'newer bundled version was not copied'
     Remove-Item -LiteralPath $fakeModules -Recurse -Force
     Install-UserPSReadLine -Source (Join-Path $root 'modules') | Out-Null
-    Assert-True (-not (Test-Path $fakeModules)) 'an installed version that is new enough must be kept'
+    $installed = (Get-Module -ListAvailable PSReadLine | Sort-Object Version | Select-Object -Last 1).Version
+    if ($installed -ge [version]$bundled.Name) { Assert-True (-not (Test-Path $fakeModules)) 'an installed version that is new enough is kept' }
+    else { Assert-True (Test-Path (Join-Path $fakeModules "PSReadLine\$($bundled.Name)\PSReadLine.psd1")) 'an older installed version gets the bundled one' }
 }
 
 Test-Case 'end-to-end install and uninstall into a temp folder' {

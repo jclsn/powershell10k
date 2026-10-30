@@ -47,7 +47,15 @@ $env:PS10K_HOME = $root
 $env:PS10K_CONFIG = Join-Path $work 'p10k.ps1'
 $env:PS10K_Z_DATA = Join-Path $work 'z'
 $env:PS10K_DISABLE_WIZARD = '1'
-Import-Module PSReadLine -ErrorAction SilentlyContinue
+# The bundled PSReadLine when the installed one is older (CI runners, fresh
+# machines): several features and their tests need 2.1+.
+$bundledPsrl = Get-ChildItem -LiteralPath (Join-Path $root 'modules\PSReadLine') -Directory | Sort-Object { [version]$_.Name } | Select-Object -Last 1
+$installedPsrl = Get-Module -ListAvailable PSReadLine | Sort-Object Version | Select-Object -Last 1
+if ($bundledPsrl -and (-not $installedPsrl -or $installedPsrl.Version -lt [version]$bundledPsrl.Name)) {
+    Import-Module (Join-Path $bundledPsrl.FullName 'PSReadLine.psd1') -ErrorAction SilentlyContinue
+}
+else { Import-Module PSReadLine -ErrorAction SilentlyContinue }
+Write-Host "PowerShell $($PSVersionTable.PSVersion), PSReadLine $((Get-Module PSReadLine).Version)"
 $global:PS10K_PLUGINS = @('git', 'z', 'aliases', 'autosuggestions', 'syntax-highlighting', 'extract', 'web-search', 'copypath')
 $global:PS10K_THEME = 'powerlevel10k'
 
