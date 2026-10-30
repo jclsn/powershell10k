@@ -1,5 +1,7 @@
 # powershell10k
 
+[![tests](https://github.com/jclsn/powershell10k/actions/workflows/tests.yml/badge.svg)](https://github.com/jclsn/powershell10k/actions/workflows/tests.yml)
+
 oh-my-zsh and powerlevel10k for PowerShell and Windows Terminal. Pure
 PowerShell, Windows PowerShell 5.1 and PowerShell 7, **no administrator rights
 needed**.
@@ -72,6 +74,15 @@ $global:PS10K_PLUGINS = @('git', 'z', 'aliases', 'autosuggestions', 'syntax-high
 
 Each plugin's keys and options are explained in comments in its file under
 `plugins\`.
+
+## Tests
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tests\run-tests.ps1
+```
+
+Add `-Area git, plugins` to run only some areas. GitHub Actions runs the
+tests on every push and pull request.
 
 ## Troubleshooting
 
