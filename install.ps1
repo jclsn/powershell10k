@@ -175,14 +175,25 @@ function Get-TerminalSettingsPaths {
     ) | Where-Object { Test-Path -LiteralPath $_ }
 }
 
-# Adds -NoLogo to a powershell.exe / pwsh.exe command line, which hides the
+# Adds -NoLogo right after powershell.exe / pwsh.exe, which hides the
 # copyright banner and the "Loading personal and system profiles took" line.
+# Only for interactive shells: when the profile starts PowerShell to run a
+# command (powershell.exe ssh me@vm) or a script, there is no banner, and
+# anything after the command belongs to that command. A trailing -NoLogo
+# that older versions added after such a command is removed again.
 function Add-NoLogo([string]$CommandLine) {
-    if ($CommandLine -notmatch '(?i)(^|[\\/"\s])(powershell|pwsh)(\.exe)?"?(\s|$)') { return $CommandLine }
-    if ($CommandLine -match '(?i)\s-nol(o(go?)?)?(\s|$)') { return $CommandLine }
-    # Leave command lines that run a script or command alone.
-    if ($CommandLine -match '(?i)\s-(c|command|f|file|e|encodedcommand)(\s|$)') { return $CommandLine }
-    $CommandLine.TrimEnd() + ' -NoLogo'
+    if ($CommandLine -notmatch '^\s*("[^"]*"|\S+)(.*)$') { return $CommandLine }
+    $program = $Matches[1]; $rest = $Matches[2]
+    $name = [IO.Path]::GetFileName($program.Trim('"'))
+    if ($name -notmatch '^(?i)(powershell|pwsh)(\.exe)?$') { return $CommandLine }
+    $words = @($rest.Trim() -split '\s+' | Where-Object { $_ })
+    $runsSomething = @($words | Where-Object { $_ -notmatch '^[-/]' -or $_ -match '^(?i)[-/](c|command|f|file|e|ec|encodedcommand)$' }).Count -gt 0
+    if ($runsSomething) {
+        if ($CommandLine -match '(?i)^(.*\S)\s+-NoLogo\s*$' -and $words[0] -notmatch '^(?i)-nol') { return $Matches[1] }
+        return $CommandLine
+    }
+    if (@($words | Where-Object { $_ -match '^(?i)[-/]nol(o(go?)?)?$' }).Count -gt 0) { return $CommandLine }
+    $program + ' -NoLogo' + $rest
 }
 
 # Windows Terminal's built-in "Windows PowerShell" profile.
