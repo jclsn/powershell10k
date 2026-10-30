@@ -190,3 +190,125 @@ Test-Case 'git helpers that talk to remotes use the current and main branch' {
     }
     finally { Remove-Item Function:\git, Variable:\_test_git -ErrorAction SilentlyContinue }
 }
+
+# Replaces git with a recorder for the length of $Body. Each call is stored as
+# its argument line; $global:_test_git_env records LC_ALL per call.
+function Use-TestGit([string]$Version, [scriptblock]$Body) {
+    $global:_test_git = New-Object System.Collections.ArrayList
+    $global:_test_git_env = New-Object System.Collections.ArrayList
+    $global:_test_git_version = $Version
+    $global:_ps10k_git_version = $null
+    function global:git {
+        $line = $args -join ' '
+        [void]$global:_test_git.Add($line)
+        [void]$global:_test_git_env.Add("$env:LC_ALL")
+        $global:LASTEXITCODE = 0
+        switch -Wildcard ($line) {
+            'version' { "git version $global:_test_git_version.windows.1"; break }
+            'symbolic-ref*' { 'feature'; break }
+            'show-ref -q --verify refs/heads/main' { break }
+            'show-ref*' { $global:LASTEXITCODE = 1; break }
+            'branch --no-color -vv' { '  old-feature 1234567 [origin/old-feature: gone] done', '* main 89abcde [origin/main] work'; break }
+            'clone*' { New-Item -ItemType Directory -Path (Join-Path (Get-Location) 'cloned-repo') -Force | Out-Null; break }
+        }
+    }
+    try { & $Body }
+    finally {
+        Remove-Item Function:\git -ErrorAction SilentlyContinue
+        Remove-Variable -Name _test_git, _test_git_env, _test_git_version -Scope Global -ErrorAction SilentlyContinue
+        $global:_ps10k_git_version = $null
+    }
+}
+
+Test-Case 'all of oh-my-zsh''s git aliases and functions exist' {
+    $names = @(
+        'g', 'ga', 'gaa', 'gam', 'gamscp', 'gap', 'gapt', 'gav', 'gbd', 'gbg', 'gbgd', 'gbgdf', 'gbm', 'gbnm', 'gbsb', 'gbss',
+        'gc', 'gc!', 'gca!', 'gcan!', 'gcann!', 'gcans!', 'gcas', 'gcasm', 'gcfu', 'gclf', 'gcn', 'gcn!', 'gcor', 'gcount',
+        'gcs', 'gcsm', 'gcss', 'gcssm', 'gdct', 'gdcw', 'gdt', 'gdup', 'gfg', 'gg', 'gga', 'ggpur', 'ggsup', 'ghh',
+        'gignore', 'gignored', 'gk', 'gke', 'glgg', 'glgga', 'glgm', 'glod', 'glods', 'glol', 'glola', 'glolm', 'glols',
+        'glom', 'glp', 'gluc', 'glum', 'gmff', 'gms', 'gmtl', 'gmtlvim', 'gmum', 'gpf', 'gpf!', 'gpoat', 'gpod', 'gprav',
+        'gpristine', 'gprom', 'gpromi', 'gprum', 'gprumi', 'gprv', 'gpsupf', 'gpu', 'gpv', 'grbd', 'grbmi', 'grbmia',
+        'grbo', 'grbom', 'grbum', 'greva', 'grevc', 'grf', 'grhk', 'grmv', 'grrm', 'grset', 'grss', 'gru', 'grup', 'gsd',
+        'gshs', 'gsi', 'gsnut', 'gsps', 'gsr', 'gstall', 'gstu', 'gsu', 'gsuri', 'gswd', 'gswm', 'gta', 'gtl', 'gtv',
+        'gunignore', 'gwch', 'gwipe', 'gwtmv', 'git-svn-dcommit-push', 'work_in_progress',
+        'ggu', 'ggl', 'ggp', 'ggf', 'ggfl', 'ggpnp', 'gbcopy', 'grename', 'gunwipall', 'gbda', 'gbds', 'gccd', 'gdv', 'gdnolock'
+    )
+    $missing = @($names | Where-Object { -not (Get-Command -Name $_ -ErrorAction Ignore) })
+    Assert-Equal '' ($missing -join ' ') 'missing commands'
+    Assert-Equal '_ps10k_git_gcs' (Get-Alias gcs).Definition 'gcs (Get-PSCallStack) is replaced too'
+}
+
+Test-Case 'git aliases run the right git commands' {
+    Use-TestGit '2.45.1' {
+        $cases = [ordered]@{
+            'gc!'      = { & 'gc!' }
+            'gcan!'    = { & 'gcan!' }
+            gdup       = { gdup }
+            glod       = { glod -3 }
+            ggsup      = { ggsup }
+            glom       = { glom }
+            gpf        = { gpf }
+            gpsupf     = { gpsupf }
+            gtl        = { gtl v1 }
+            gstu       = { gstu }
+            'ggl one'  = { ggl other }
+            'ggl many' = { ggl a b }
+            'ggp none' = { ggp }
+            ggu        = { ggu }
+            ggfl       = { ggfl }
+            gdnolock   = { gdnolock HEAD }
+        }
+        $expected = @{
+            'gc!'      = 'commit --verbose --amend'
+            'gcan!'    = 'commit --verbose --all --no-edit --amend'
+            gdup       = 'diff @{upstream}'
+            glod       = 'log --graph --pretty=%Cred%h%Creset -%C(auto)%d%Creset %s %Cgreen(%ad) %C(bold blue)<%an>%Creset -3'
+            ggsup      = 'branch --set-upstream-to=origin/feature'
+            glom       = 'log --oneline --decorate --color main..'
+            gpf        = 'push --force-with-lease --force-if-includes'
+            gpsupf     = 'push --set-upstream origin feature --force-with-lease --force-if-includes'
+            gtl        = 'tag --sort=-v:refname -n --list v1*'
+            gstu       = 'stash push --include-untracked'
+            'ggl one'  = 'pull origin other'
+            'ggl many' = 'pull origin a b'
+            'ggp none' = 'push origin feature'
+            ggu        = 'pull --rebase origin feature'
+            ggfl       = 'push --force-with-lease origin feature'
+            gdnolock   = 'diff HEAD :(exclude)package-lock.json :(exclude)*.lock'
+        }
+        foreach ($name in $cases.Keys) {
+            $global:_test_git.Clear()
+            & $cases[$name] | Out-Null
+            Assert-Equal $expected[$name] $global:_test_git[-1] $name
+        }
+        $global:_test_git.Clear(); gpoat
+        Assert-Equal 'push origin --all|push origin --tags' ($global:_test_git -join '|') 'gpoat pushes branches, then tags'
+        $global:_test_git.Clear(); gpristine
+        Assert-Equal 'reset --hard|clean --force -dfx' ($global:_test_git -join '|')
+    }
+    Use-TestGit '2.20.0' {
+        gpf
+        Assert-Equal 'push --force-with-lease' $global:_test_git[-1] 'older git: without --force-if-includes'
+    }
+}
+
+Test-Case 'gone branches are found in English output and deleted' {
+    Use-TestGit '2.45.1' {
+        Assert-Equal 1 @(gbg).Count 'one gone branch'
+        Assert-Equal 'C' $global:_test_git_env[$global:_test_git.IndexOf('branch --no-color -vv')] 'git runs with LC_ALL=C'
+        $global:_test_git.Clear(); gbgd
+        Assert-Equal 'branch -d old-feature' $global:_test_git[-1]
+        $global:_test_git.Clear(); gbgdf
+        Assert-Equal 'branch -D old-feature' $global:_test_git[-1]
+        Assert-True ($env:LC_ALL -ne 'C') 'LC_ALL is restored'
+    }
+}
+
+Test-Case 'gccd clones and changes into the new folder' {
+    Push-Location -LiteralPath $work
+    try {
+        Use-TestGit '2.45.1' { gccd https://example.invalid/team/cloned-repo.git }
+        Assert-Equal (Join-Path $work 'cloned-repo') (Get-Location).Path
+    }
+    finally { Pop-Location }
+}
