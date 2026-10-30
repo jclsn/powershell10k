@@ -166,6 +166,7 @@ Test-Case 'aliases plugin: navigation and file helpers' {
     $message = try { which no-such-command-ps10k 2>&1 } catch { "$_" }
     Assert-True ("$message" -match 'not found')
     Assert-True ((path) -contains "$env:SystemRoot\system32" -or @(path).Count -gt 0) 'path splits PATH'
+    Assert-True (@($global:PS10K_HOOKS.preexec | Where-Object { "$_" -match '_ps10k_expand_dots_line' }).Count -eq 1) 'dotted paths expand on Enter'
     if (_ps10k_find_exe 'pwsh') { Assert-True (-not (Get-Alias pwsh -ErrorAction Ignore)) 'PowerShell 7 stays pwsh' }
     else { Assert-Equal 'powershell' (Get-Alias pwsh).Definition 'pwsh opens Windows PowerShell' }
     # The fallback grep, whether or not grep.exe is on PATH here.

@@ -40,6 +40,34 @@ Test-Case 'cd without arguments goes home' {
     finally { Pop-Location }
 }
 
+Test-Case 'dotted paths: ... is ..\.., .... is ..\..\.. and so on' {
+    Assert-Equal '..\..' (_ps10k_expand_dots '...')
+    Assert-Equal '..\..\..' (_ps10k_expand_dots '....')
+    Assert-Equal '..\..\..\..' (_ps10k_expand_dots '.....')
+    Assert-Equal '..\..\src' (_ps10k_expand_dots '...\src') 'at the start of a path'
+    Assert-Equal '../../src' (_ps10k_expand_dots '.../src') 'keeps the typed separator'
+    foreach ($same in '..', '.', 'a...', '...x', '.\...') { Assert-Equal $same (_ps10k_expand_dots $same) "$same unchanged" }
+    Assert-Equal 'cd ..\..' (_ps10k_expand_dots_line 'cd ...')
+    Assert-Equal 'cp a ..\..\..\b; ls ..\..' (_ps10k_expand_dots_line 'cp a ....\b; ls ...') 'every command of the line'
+    Assert-Equal '...' (_ps10k_expand_dots_line '...') 'the ... command itself stays'
+    Assert-Equal "echo '...' `"...`"" (_ps10k_expand_dots_line "echo '...' `"...`"") 'quoted text stays'
+    Assert-Equal 'git log -n 3' (_ps10k_expand_dots_line 'git log -n 3') 'lines without dots stay'
+    $deep = Join-Path $work 'dots\a\b\c'
+    New-Item -ItemType Directory -Path $deep -Force | Out-Null
+    Push-Location -LiteralPath $deep
+    try {
+        cd ...
+        Assert-Equal (Join-Path $work 'dots\a') (Get-Location).Path 'cd ... goes up two folders'
+        Set-Location -LiteralPath $deep
+        cd ....\a\b
+        Assert-Equal (Join-Path $work 'dots\a\b') (Get-Location).Path 'cd ....\a\b'
+        Set-Location -LiteralPath $deep
+        cd -Path ...
+        Assert-Equal (Join-Path $work 'dots\a') (Get-Location).Path 'with -Path too'
+    }
+    finally { Pop-Location }
+}
+
 Test-Case 'colors reject unknown values and strip escape sequences' {
     Assert-Equal "$([char]27)[38;5;12m" (_ps10k_fg 'BrightBlue') 'names ignore case'
     Assert-Equal '' (_ps10k_fg 'no-such-color')
