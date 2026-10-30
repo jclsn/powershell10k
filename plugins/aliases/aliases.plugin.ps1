@@ -55,6 +55,10 @@ if (-not (Get-Command grep -CommandType Application -ErrorAction SilentlyContinu
     Set-Alias -Name grep -Value _ps10k_grep -Scope Global
 }
 
+# pwsh opens a new Windows PowerShell where PowerShell 7 is not installed;
+# with PowerShell 7 installed, pwsh stays PowerShell 7.
+if (-not (_ps10k_find_exe 'pwsh')) { Set-Alias -Name pwsh -Value powershell -Scope Global }
+
 function global:h { Get-History @args }
 function global:hs([string]$Pattern) {
     $file = (Get-PSReadLineOption -ErrorAction SilentlyContinue).HistorySavePath
