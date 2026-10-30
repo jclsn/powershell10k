@@ -31,8 +31,15 @@ Test-Case 'PowerShell profiles in Windows Terminal get -NoLogo' {
     Assert-Equal '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe -NoLogo' (Add-NoLogo '%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe')
     Assert-Equal '"C:\Program Files\PowerShell\7\pwsh.exe" -NoLogo' (Add-NoLogo '"C:\Program Files\PowerShell\7\pwsh.exe"')
     Assert-Equal 'pwsh.exe -nologo' (Add-NoLogo 'pwsh.exe -nologo')
+    Assert-Equal 'pwsh.exe -NoLogo -NoExit' (Add-NoLogo 'pwsh.exe -NoExit') 'right after the program, before other switches'
     Assert-Equal 'powershell.exe -File x.ps1' (Add-NoLogo 'powershell.exe -File x.ps1')
+    Assert-Equal 'powershell.exe -c Get-Date' (Add-NoLogo 'powershell.exe -c Get-Date')
+    Assert-Equal 'powershell.exe ssh jan@my-vm' (Add-NoLogo 'powershell.exe ssh jan@my-vm') 'a command runs: nothing added'
+    Assert-Equal 'powershell.exe ssh jan@my-vm' (Add-NoLogo 'powershell.exe ssh jan@my-vm -NoLogo') 'the old trailing -NoLogo is removed'
+    Assert-Equal 'powershell.exe -NoLogo ssh jan@my-vm' (Add-NoLogo 'powershell.exe -NoLogo ssh jan@my-vm') 'a -NoLogo before the command stays'
     Assert-Equal 'cmd.exe' (Add-NoLogo 'cmd.exe')
+    Assert-Equal 'cmd.exe /k powershell.exe' (Add-NoLogo 'cmd.exe /k powershell.exe') 'only the program that starts counts'
+    Assert-Equal 'C:\tools\mypowershell.exe' (Add-NoLogo 'C:\tools\mypowershell.exe') 'only powershell and pwsh themselves'
     $settings = Join-Path $work 'settings-logo.json'
     Set-Content -LiteralPath $settings -Value '{ "profiles": { "list": [ { "guid": "{61c54bbd-c2c6-5271-96e7-009a87ff44bf}", "name": "Windows PowerShell" }, { "commandline": "cmd.exe" }, { "source": "Windows.Terminal.PowershellCore" } ] } }'
     Update-TerminalSettings -Path $settings -NoLogo
