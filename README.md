@@ -62,9 +62,9 @@ $global:PS10K_PLUGINS = @('git', 'z', 'aliases', 'autosuggestions', 'syntax-high
 
 | Plugin | What it does |
 | --- | --- |
-| `git` | oh-my-zsh git aliases (`gst`, `gco`, `gp`, ...) and completion |
+| `git` | all of oh-my-zsh's git aliases and functions (`gst`, `gco`, `gp`, `ggpush`, ...) and completion |
 | `z` | jump to frequently used folders: `z proj` |
-| `aliases` | `..`, `ll`, `take`, `touch`, `which` and more |
+| `aliases` | `..`, `ll`, `take`, `touch`, `which`, `pwsh` (when PowerShell 7 is missing) and more |
 | `autosuggestions` | history search and the Tab completion grid |
 | `syntax-highlighting` | colors as you type |
 | `vi-mode` | vi key bindings, like `bindkey -v` |
