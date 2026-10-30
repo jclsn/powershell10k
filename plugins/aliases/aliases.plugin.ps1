@@ -5,6 +5,18 @@ function global:... { Set-Location ..\.. }
 function global:.... { Set-Location ..\..\.. }
 function global:..... { Set-Location ..\..\..\.. }
 
+# ... and more in arguments, like zsh's global aliases: on Enter, ls ... runs
+# as ls ..\.. and cp a ....\b as cp a ..\..\..\b (lib/navigation.ps1).
+if (Get-Module PSReadLine) {
+    Add-PS10kHook -Type preexec -Action {
+        $line = $null; $cursor = $null
+        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+        $expanded = _ps10k_expand_dots_line $line
+        if ($expanded -ne $line) { [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $line.Length, $expanded) }
+    }
+    _ps10k_bind_accept_line
+}
+
 function global:l { Get-ChildItem -Force @args }
 function global:la { Get-ChildItem -Force @args }
 function global:ll { Get-ChildItem @args | Format-Table Mode, LastWriteTime, Length, Name -AutoSize }

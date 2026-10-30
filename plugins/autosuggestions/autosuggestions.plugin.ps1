@@ -64,6 +64,15 @@ function global:_ps10k_menu_fits([string]$Line, [int]$Cursor) {
 function global:_ps10k_tab_complete($Key, $Arg, [bool]$Backward) {
     $line = $null; $cursor = $null
     [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+    # cd ...\<Tab> completes inside ..\..: dotted paths up to the cursor are
+    # expanded first, and the cursor stays behind them.
+    $typed = $line.Substring(0, $cursor)
+    $expanded = _ps10k_expand_dots_line $typed
+    if ($expanded -ne $typed) {
+        [Microsoft.PowerShell.PSConsoleReadLine]::Replace(0, $typed.Length, $expanded)
+        [Microsoft.PowerShell.PSConsoleReadLine]::SetCursorPosition($expanded.Length)
+        [Microsoft.PowerShell.PSConsoleReadLine]::GetBufferState([ref]$line, [ref]$cursor)
+    }
     $before = $line
     # Still cycling in place: keep going even though the line now holds a match.
     $cycling = $null -ne $global:_ps10k_tab_cycle -and $global:_ps10k_tab_cycle -eq $line
